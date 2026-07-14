@@ -34,6 +34,7 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 
 | Option                 | Default        | What it does                                                                                 |
 | ---------------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| `FullUnionTerrainSupport` | `false`        | Enable the full union mesh + streamed terrain profile. Forces `SetStreaming`, keeps hidden-property reads enabled, disables union-to-part fallback, and raises terrain settle time unless overridden. |
 | `SetStreaming`         | `false`        | **Force-load the whole StreamingEnabled map** before saving (alias: `Streaming`).            |
 | `StreamingAreaSize`    | `10000`        | Side length (studs) of the swept area. Raise for maps wider than 10k studs.                  |
 | `StreamingConcurrency` | `false` (auto) | Requests in flight at once. Auto-scales to map size; set a number to force.                  |

@@ -2037,6 +2037,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field IgnoreSharedStrings boolean -- * **RISKY: FIXES CRASHES (TEMPORARY, TESTED ON ROEXEC ONLY). FEEL FREE TO DISABLE THIS TO SEE IF IT WORKS FOR YOU**. ___Default:___ true
 --- @field SharedStringOverwrite boolean -- * **RISKY:** if the process is not finished aka crashed then none of the affected values will be available. SharedStrings can also be used for ValueTypes that aren't `SharedString`, this behavior is not documented anywhere but makes sense (Could create issues though, due to _potential_ ValueType mix-up, only works on certain types which are all base64 encoded so far). Reason: Allows for potential smaller file size (can also be bigger in some cases). ___Default:___ false
 --- @field TreatUnionsAsParts boolean -- * **RISKY:** Converts all UnionOperations to Parts. Useful if your Executor isn't able to save (read) Unions, because otherwise they will be invisible. ___Default:___ false (except Solara)
+--- @field FullUnionTerrainSupport boolean -- * Convenience profile for full-fidelity maps: enables `SetStreaming`, keeps hidden-property union/terrain reads enabled, disables `TreatUnionsAsParts`, and uses a longer terrain settle time unless overridden. ___Default:___ false
 --- @field SetStreaming boolean -- * Before saving, force-loads an entire `StreamingEnabled` map into memory so saveinstance captures the WHOLE map instead of only the chunks near you. Pins loaded content (`ModelStreamingMode = Persistent`) so nothing streams back out, then sweeps a grid with `RequestStreamAroundAsync`. Can be slow and laggy on large maps. ___Aliases:___ `Streaming`. ___Default:___ false
 --- @field StreamingAreaSize number -- * Side length (studs) of the square area swept around your starting position when `SetStreaming` is on. ___Default:___ 10000
 --- @field StreamingRadius number -- * Per-request stream radius. Auto-uses the game's `StreamingTargetRadius` when readable. ___Default:___ 1024
@@ -2520,6 +2521,9 @@ local function report_executor_support(O)
 	if O.SetStreaming and not sethiddenproperty then
 		missing[#missing + 1] = "sethiddenproperty  ->  SetStreaming can't fully pin streamed content (may be less reliable)"
 	end
+	if O.FullUnionTerrainSupport and not gethiddenproperty then
+		missing[#missing + 1] = "FullUnionTerrainSupport needs gethiddenproperty for union mesh and terrain grids"
+	end
 	if O.DecompilePrepass and not get_http_request() then
 		missing[#missing + 1] = "HTTP request function  ->  DecompilePrepass can't reach the decompile API (it will be skipped)"
 	end
@@ -2556,7 +2560,9 @@ local function write_capability_report(O, missing, save_ok, elapsed, save_err)
 		"selected_options:",
 		"- mode: " .. tostring(O.mode),
 		"- noscripts: " .. tostring(O.noscripts),
+		"- FullUnionTerrainSupport: " .. tostring(O.FullUnionTerrainSupport),
 		"- SetStreaming: " .. tostring(O.SetStreaming),
+		"- StreamingSettleTime: " .. tostring(O.StreamingSettleTime),
 		"- IgnoreSpecialProperties: " .. tostring(O.IgnoreSpecialProperties),
 		"- TreatUnionsAsParts: " .. tostring(O.TreatUnionsAsParts),
 		"- DecompilePrepass: " .. tostring(O.DecompilePrepass),
@@ -2912,6 +2918,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		IgnoreSharedStrings = EXECUTOR_NAME ~= "Wave" and true,
 		SharedStringOverwrite = false,
 		TreatUnionsAsParts = not gethiddenproperty or ArrayToDict({ "Fluxus", "Delta", "Solara" })[EXECUTOR_NAME] or false, -- * Executors that can't read union mesh (no/broken gethiddenproperty, or those where special props are ignored for stability) fall back to a visible Part (bounding box) instead of an invisible union. Executors with working gethiddenproperty save the full union mesh.
+		FullUnionTerrainSupport = false, -- convenience profile: full union mesh + full streamed terrain capture
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
 		-- * Detailed debug log written to saveinstance-debug.txt in the executor workspace (share it for diagnosis)
@@ -3117,6 +3124,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local IgnoreNotArchivable = not OPTIONS.IgnoreNotArchivable
 	local IgnorePropertiesOfNotScriptsOnScriptsMode = OPTIONS.IgnorePropertiesOfNotScriptsOnScriptsMode
 
+	if OPTIONS.FullUnionTerrainSupport then
+		OPTIONS.SetStreaming = true
+		OPTIONS.IgnoreSpecialProperties = false
+		OPTIONS.TreatUnionsAsParts = false
+		if CustomOptions_valid.StreamingSettleTime == nil then
+			OPTIONS.StreamingSettleTime = math.max(tonumber(OPTIONS.StreamingSettleTime) or 5, 8)
+		end
+		if CustomOptions_valid.CapabilityReport == nil then
+			OPTIONS.CapabilityReport = true
+		end
+	end
+
 	_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
 	if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
 		debug_enabled = true
@@ -3125,7 +3144,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		dbg("=== saveinstance debug log ===")
 		dbg("executor:", EXECUTOR_NAME ~= "" and EXECUTOR_NAME or "Unknown", "| client:", CLIENT_VERSION, "| StreamingEnabled:", workspace.StreamingEnabled, "| place:", game.PlaceId)
 		dbg("caps: gethiddenproperty=", gethiddenproperty ~= nil, "getscriptbytecode=", getscriptbytecode ~= nil, "decompile=", decompile ~= nil, "http_request=", get_http_request() ~= nil, "sethiddenproperty=", sethiddenproperty ~= nil, "base64encode=", base64encode ~= nil, "getloadedmodules=", getloadedmodules ~= nil, "sha384=", sha384 ~= nil)
-		dbg("options: mode=", OPTIONS.mode, "noscripts=", OPTIONS.noscripts, "SetStreaming=", OPTIONS.SetStreaming, "DecompilePrepass=", OPTIONS.DecompilePrepass, "IgnoreSpecialProperties=", OPTIONS.IgnoreSpecialProperties, "UseUGCValidationService=", OPTIONS.UseUGCValidationService, "StreamingMaxTime=", OPTIONS.StreamingMaxTime, "StreamingConcurrency=", OPTIONS.StreamingConcurrency, "StreamingAreaSize=", OPTIONS.StreamingAreaSize, "PrepassRateGap=", OPTIONS.PrepassRateGap)
+		dbg("options: mode=", OPTIONS.mode, "noscripts=", OPTIONS.noscripts, "FullUnionTerrainSupport=", OPTIONS.FullUnionTerrainSupport, "SetStreaming=", OPTIONS.SetStreaming, "DecompilePrepass=", OPTIONS.DecompilePrepass, "IgnoreSpecialProperties=", OPTIONS.IgnoreSpecialProperties, "TreatUnionsAsParts=", OPTIONS.TreatUnionsAsParts, "UseUGCValidationService=", OPTIONS.UseUGCValidationService, "StreamingMaxTime=", OPTIONS.StreamingMaxTime, "StreamingConcurrency=", OPTIONS.StreamingConcurrency, "StreamingAreaSize=", OPTIONS.StreamingAreaSize, "StreamingSettleTime=", OPTIONS.StreamingSettleTime, "PrepassRateGap=", OPTIONS.PrepassRateGap)
 	end
 
 	local capability_missing = report_executor_support(OPTIONS) -- tell the user up front about any missing capabilities (must run before gethiddenproperty is possibly disabled below)

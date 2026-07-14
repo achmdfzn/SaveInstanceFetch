@@ -9,7 +9,7 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 - **Unions render correctly** - Re-enabled gethiddenproperty during save to read union's MeshData2
 - **Part properties preserved** - Color and Size are saved using official Roblox CDN API dump
 - **Media content supported** - Decals, images, and sounds are saved with proper Content DataType handling
-- **Whole-map streaming capture** - `SetStreaming` force-loads StreamingEnabled maps before saving
+- **Whole-map streaming capture** - `SetStreaming` and `FullUnionTerrainSupport` force-load StreamingEnabled maps before saving
 - **Private mesh recovery path** - `ExportObj` can bake MeshPart geometry into a world-space `.obj` file
 - **Cleaner saved scenes** - `NeutralizeLighting` can reset dark/foggy lighting before save
 - **Debuggable decompile flow** - `Debug`, `CapabilityReport`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
@@ -72,13 +72,12 @@ local Options = {
 }
 ```
 
-Whole StreamingEnabled map with cleaner lighting:
+Full union + terrain capture for StreamingEnabled maps:
 
 ```luau
 local Options = {
-    SetStreaming = true,
+    FullUnionTerrainSupport = true,
     NeutralizeLighting = true,
-    CapabilityReport = true,
 }
 ```
 
@@ -95,6 +94,7 @@ local Options = {
 
 ### Save Options
 
+- **FullUnionTerrainSupport** - Enable full union mesh + streamed terrain capture profile; turns on `SetStreaming`, keeps hidden-property reads enabled, disables union-to-part fallback, and raises terrain settle time unless you override it (default: false)
 - **CapabilityReport** - Write `saveinstance-capabilities.txt` with executor support, selected options, decompile API results, and likely save limitations (default: false)
 - **Debug** - Write the larger `saveinstance-debug.txt` run log for troubleshooting (default: false)
 
