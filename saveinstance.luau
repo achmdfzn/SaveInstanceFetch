@@ -2049,6 +2049,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field NeutralizeLighting boolean -- * Reset `Lighting` (ClockTime/Fog/Ambient), `Atmosphere`, post-effects (ColorCorrection/Bloom/Blur/SunRays/DoF) and clouds to clean midday right before saving, so the place opens BRIGHT instead of inheriting the game's dark/foggy/night atmosphere (the "all grey on the camera" look). `false` keeps the game's real lighting. ___Default:___ false
 --- @field ExportObj boolean -- * Also write a world-space `.obj` of all MeshPart geometry next to the save. Geometry is recovered with `AssetService:CreateEditableMeshAsync`, which works even for PRIVATE game meshes that Studio can't re-download (those save as grey boxes). The `.obj` (with per-part vertex colors) opens in Blender or Studio's 3D importer. MeshParts can't be made to render inside the place file itself, so this is the only way to recover their visuals. Best paired with `SetStreaming` (load the whole map first). World-space baking duplicates reused meshes, so big maps produce large files. ___Default:___ false
 --- @field Debug boolean -- * Writes a detailed run log to `saveinstance-debug.txt` in the executor workspace (executor, capabilities, options, streaming/prepass/decompile stats, save result). Share it for diagnosis. ___Default:___ false
+--- @field CapabilityReport boolean -- * Writes a short compatibility report to `saveinstance-capabilities.txt` with executor support and likely save limitations. Useful when a save fails or looks incomplete. ___Default:___ false
 --- @field DecompilePrepass boolean -- * **RISKY:** Before saving, decompiles every client script in parallel via an external API (`api.lua.expert`) and pre-fills the decompile cache, so the save's decompile step is near-instant. Big speedup on script-heavy games. Sends script bytecode to a third-party API; needs `getscriptbytecode` + an HTTP request function. ___Default:___ false
 --- @field PrepassConcurrency number -- * Parallel decompile requests kept in flight during the prepass. ___Default:___ 24
 --- @field PrepassRateGap number -- * Minimum seconds between decompile-API requests (lua.expert rejects unthrottled bursts). Lower = faster if the API allows. ___Default:___ 0.12
@@ -2532,6 +2533,60 @@ local function report_executor_support(O)
 	return missing
 end
 
+local function write_capability_report(O, missing, save_ok, elapsed, save_err)
+	local lines = {
+		"SaveInstanceFetch capability report",
+		"executor: " .. (EXECUTOR_NAME ~= "" and EXECUTOR_NAME or "Unknown"),
+		"place_id: " .. tostring(game.PlaceId),
+		"client_version: " .. tostring(FULL_VERSION),
+		"save_ok: " .. tostring(save_ok),
+		"elapsed: " .. string.format("%.2fs", elapsed or 0),
+		"",
+		"capabilities:",
+		"- gethiddenproperty: " .. tostring(gethiddenproperty ~= nil),
+		"- sethiddenproperty: " .. tostring(sethiddenproperty ~= nil),
+		"- getscriptbytecode: " .. tostring(getscriptbytecode ~= nil),
+		"- decompile: " .. tostring(decompile ~= nil or GLOBAL_ENV.decompile ~= nil),
+		"- http_request: " .. tostring(get_http_request() ~= nil),
+		"- base64encode: " .. tostring(base64encode ~= nil),
+		"- writefile: " .. tostring(writefile ~= nil),
+		"- getloadedmodules: " .. tostring(getloadedmodules ~= nil),
+		"- sha384: " .. tostring(sha384 ~= nil),
+		"",
+		"selected_options:",
+		"- mode: " .. tostring(O.mode),
+		"- noscripts: " .. tostring(O.noscripts),
+		"- SetStreaming: " .. tostring(O.SetStreaming),
+		"- IgnoreSpecialProperties: " .. tostring(O.IgnoreSpecialProperties),
+		"- TreatUnionsAsParts: " .. tostring(O.TreatUnionsAsParts),
+		"- DecompilePrepass: " .. tostring(O.DecompilePrepass),
+		"- PrepassMaxScripts: " .. tostring(O.PrepassMaxScripts),
+		"",
+		"decompile_api:",
+		"- ok: " .. tostring(_api_ok),
+		"- failed: " .. tostring(_api_fail),
+		"- first_failure: " .. tostring(_api_first_fail or ""),
+		"",
+		"limitations:",
+	}
+
+	missing = missing or {}
+	if #missing == 0 then
+		lines[#lines + 1] = "- none detected before save"
+	else
+		for _, item in missing do
+			lines[#lines + 1] = "- " .. tostring(item)
+		end
+	end
+	if not save_ok and save_err then
+		lines[#lines + 1] = ""
+		lines[#lines + 1] = "save_error:"
+		lines[#lines + 1] = tostring(save_err)
+	end
+
+	local wrote = writefile and pcall(writefile, "saveinstance-capabilities.txt", table.concat(lines, "\n"))
+	print("[saveinstance] Capability report " .. (wrote and "written to saveinstance-capabilities.txt" or "could not be written"))
+end
 -- NeutralizeLighting: reset Lighting to clean midday so the saved place opens BRIGHT instead of
 -- inheriting the game's dark/foggy/night atmosphere (the "all grey on the camera" look). Modifies
 -- the live Lighting right before the save captures it. Off by default (keeps faithful lighting).
@@ -2861,6 +2916,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		-- * Detailed debug log written to saveinstance-debug.txt in the executor workspace (share it for diagnosis)
 		Debug = false,
+		CapabilityReport = false, -- write saveinstance-capabilities.txt with executor support and likely limitations
 
 		-- * Map streaming: force-load a StreamingEnabled map before saving so the WHOLE map is captured (not just chunks near you)
 		SetStreaming = false,
@@ -3072,7 +3128,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		dbg("options: mode=", OPTIONS.mode, "noscripts=", OPTIONS.noscripts, "SetStreaming=", OPTIONS.SetStreaming, "DecompilePrepass=", OPTIONS.DecompilePrepass, "IgnoreSpecialProperties=", OPTIONS.IgnoreSpecialProperties, "UseUGCValidationService=", OPTIONS.UseUGCValidationService, "StreamingMaxTime=", OPTIONS.StreamingMaxTime, "StreamingConcurrency=", OPTIONS.StreamingConcurrency, "StreamingAreaSize=", OPTIONS.StreamingAreaSize, "PrepassRateGap=", OPTIONS.PrepassRateGap)
 	end
 
-	report_executor_support(OPTIONS) -- tell the user up front about any missing capabilities (must run before gethiddenproperty is possibly disabled below)
+	local capability_missing = report_executor_support(OPTIONS) -- tell the user up front about any missing capabilities (must run before gethiddenproperty is possibly disabled below)
 
 	local old_gethiddenproperty
 	if OPTIONS.IgnoreSpecialProperties and gethiddenproperty then -- ? Only disable gethiddenproperty when the user opts into IgnoreSpecialProperties. Previously this read `if OPTIONS` (always truthy), which disabled gethiddenproperty for EVERY save and forced special props (e.g. Union MeshData2) through UGCValidationService, which can't read CSG blobs -> unions saved with no mesh.
@@ -4710,7 +4766,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			if ok then
 				print(string.format("[saveinstance] Saved! %s in %.2fs", get_size_format(), elapsed))
 			else
-				warn(string.format("[saveinstance] Save FAILED after %.2fs — see the error below", elapsed))
+				warn(string.format("[saveinstance] Save FAILED after %.2fs - see the error below", elapsed))
 				warn(err)
 			end
 			if _api_ok > 0 or _api_fail > 0 then -- always show the decompile outcome + first failure reason (no Debug needed)
@@ -4720,6 +4776,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					_api_fail,
 					(_api_fail > 0 and _api_first_fail) and (" | first failure: " .. tostring(_api_first_fail)) or ""
 				))
+			end
+			if OPTIONS.CapabilityReport then
+				write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
 			end
 			if debug_enabled then -- finish + write the debug log
 				dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))

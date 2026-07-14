@@ -12,7 +12,7 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 - **Whole-map streaming capture** - `SetStreaming` force-loads StreamingEnabled maps before saving
 - **Private mesh recovery path** - `ExportObj` can bake MeshPart geometry into a world-space `.obj` file
 - **Cleaner saved scenes** - `NeutralizeLighting` can reset dark/foggy lighting before save
-- **Debuggable decompile flow** - `Debug`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
+- **Debuggable decompile flow** - `Debug`, `CapabilityReport`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
 
 ## Installation
 
@@ -30,6 +30,7 @@ Recommended wrapper usage keeps the legacy prepass cache hook enabled, then load
 local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
 local Options = {
+    CapabilityReport = true, -- writes saveinstance-capabilities.txt for executor diagnostics
     -- Full list @ https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance
 }
 
@@ -57,7 +58,45 @@ local PrepassOptions = {
 }
 ```
 
+
+## Recommended Presets
+
+Use these inside the `Options` table when you need a focused run.
+
+Diagnostic run for executor issues:
+
+```luau
+local Options = {
+    CapabilityReport = true,
+    Debug = true,
+}
+```
+
+Whole StreamingEnabled map with cleaner lighting:
+
+```luau
+local Options = {
+    SetStreaming = true,
+    NeutralizeLighting = true,
+    CapabilityReport = true,
+}
+```
+
+Structure-only save when decompile is failing or too slow:
+
+```luau
+local Options = {
+    noscripts = true,
+    CapabilityReport = true,
+}
+```
+
 ## Configuration Options
+
+### Save Options
+
+- **CapabilityReport** - Write `saveinstance-capabilities.txt` with executor support, selected options, decompile API results, and likely save limitations (default: false)
+- **Debug** - Write the larger `saveinstance-debug.txt` run log for troubleshooting (default: false)
 
 ### PrepassOptions
 

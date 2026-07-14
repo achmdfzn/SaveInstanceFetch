@@ -23,9 +23,10 @@ synsaveinstance({
 | `noscripts`  | `false`       | Skip decompiling - save the map & structure only (scripts kept as empty instances).                    |
 | `SafeMode`   | `false`       | Kicks you from the game right before saving (anti-detection).                                          |
 | `ShowStatus` | `true`        | Show the on-screen progress bar.                                                                       |
-| `Debug`      | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) - send it for troubleshooting.          |
-| `FilePath`   | _(auto)_      | Output file name (no extension). Defaults to `place <id> <name>`.                                      |
-| `Callback`   | `false`       | Receive the serialized string in a function instead of writing a file.                                 |
+| `Debug`            | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) - send it for troubleshooting.           |
+| `CapabilityReport` | `false`       | Write `saveinstance-capabilities.txt` with executor support and likely save limitations.                |
+| `FilePath`         | _(auto)_      | Output file name (no extension). Defaults to `place <id> <name>`.                                      |
+| `Callback`         | `false`       | Receive the serialized string in a function instead of writing a file.                                 |
 
 ## Map streaming - capture the whole map
 
