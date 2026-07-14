@@ -5,7 +5,7 @@
 --!divine-intellect
 -- discord.robloxscripts.com
 -- SaveInstance 420 Edition | https://github.com/achmdfzn/SaveInstanceFetch
--- Docs: https://realslimshady2000.github.io/SaveInstance420Edition/
+-- Docs: https://github.com/achmdfzn/SaveInstanceFetch
 
 local realcheck = true
 local imagonnaaddmorecheck, _ = pcall(function()
