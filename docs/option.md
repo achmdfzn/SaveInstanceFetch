@@ -50,7 +50,8 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 | Option               | Default  | What it does                                                                                                                                                                     |
 | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NeutralizeLighting` | `false`  | Reset Lighting/Atmosphere/effects to clean midday so the place opens **bright**, not dark/foggy.                                                                                 |
-| `ExportObj`          | `false`  | Also bake all MeshPart geometry to a world-space `.obj` (opens in Blender) - the only way to recover **private** meshes that Studio can't re-download. Best with `SetStreaming`. |
+| `ExportObj`          | `false`  | Also bake all MeshPart geometry to a world-space `.obj` (opens in Blender) — the only way to recover **private** meshes that Studio can't re-download. Best with `SetStreaming`. |
+| `AssetManifest`      | `false`  | Write `saveinstance-assets.txt` listing all `rbxassetid://`, `rbxasset://`, and `http://` URIs referenced by Content/ContentId properties in the save.                           |
 | `TreatUnionsAsParts` | `false`1 | Convert Unions to plain Parts (for executors that can't read union mesh data). 1`true` on Solara.                                                                                |
 
 ## Decompiling scripts
@@ -77,6 +78,9 @@ If your executor has no decompiler, scripts fall back to the free **lua.expert**
 | `Object`                  | `false`                   | Save a specific instance (e.g. `game.Workspace`) as `.rbxmx` instead of the whole place. |
 | `IsModel`                 | `false`                   | Force model (`.rbxmx`) vs place (`.rbxlx`) output.                                       |
 | `IgnoreList`              | `{CoreGui, CorePackages}` | Instances/classes to skip (and their descendants).                                       |
+| `IgnoreNamePatterns`      | `{}`                      | Array of Lua patterns matched against `instance.Name`; matched instances are skipped.    |
+| `IgnoreTags`              | `{}`                      | Array of CollectionService tags; instances carrying ANY of these tags are skipped.       |
+| `SaveOnlyTags`            | `{}`                      | Array of CollectionService tags; ONLY instances with at least ONE of these tags are saved. Empty = disabled. |
 | `ExtraInstances`          | `{}`                      | Save only these instances (use with an invalid `mode`).                                  |
 | `IgnoreProperties`        | `{}`                      | Skip specific properties by name.                                                        |
 | `IgnoreDefaultProperties` | `true`                    | Omit properties equal to their class default (smaller files).                            |

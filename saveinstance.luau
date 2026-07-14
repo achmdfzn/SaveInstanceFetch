@@ -333,6 +333,11 @@ local debug_enabled = false
 local debug_log = {}
 local debug_clock0 = 0
 local _api_ok, _api_fail, _api_first_fail = 0, 0, nil -- lua.expert decompile outcome counters (across prepass + on-demand)
+
+-- AssetManifest: global state filled by the Content/ContentId descriptors during property serialization.
+-- Enabled when the AssetManifest option is true; written to disk at the end of the save.
+local asset_manifest_enabled = false
+local asset_manifest_set = {}
 local function dbg(...)
 	if not debug_enabled then
 		return
@@ -925,27 +930,43 @@ XML_Descriptors = {
 				.. " 0 "
 		end)
 	end,
-	Content = function(raw)
-		local SourceType = raw.SourceType
-		return SourceType == Enum.ContentSourceType.None and "<null></null>"
-			or SourceType == Enum.ContentSourceType.Uri and "<uri>" .. XML_Descriptors.string(raw.Uri) .. "</uri>"
-			or SourceType == Enum.ContentSourceType.Object and "<Ref>" .. GetRef(raw.Object)
-			.. "</Ref>" -- TODO Not sure, run tests
-	end,
-	ContentId = function(raw)
-		-- On newer clients, Content-typed props (Image, Texture, SoundId, MeshContent, ...) may read as
-		-- a Content userdata instead of a string. Extract its URI so they still serialize.
-		if type(raw) ~= "string" then
-			local ok, uri = pcall(function()
-				return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
-			end)
-			raw = (ok and uri) or ""
-		end
-		return raw == "" and "<null></null>" or "<url>" .. XML_Descriptors.string(raw) .. "</url>", "Content" -- TODO Remove "Content" str once Roblox fully releases Content DataType
-	end,
-	CoordinateFrame = function(raw)
-		return "<CFrame>" .. XML_Descriptors.CFrame(raw) .. "</CFrame>"
-	end,
+			Content = function(raw)
+				local SourceType = raw.SourceType
+				return SourceType == Enum.ContentSourceType.None and "<null></null>"
+					or SourceType == Enum.ContentSourceType.Uri and "<uri>" .. XML_Descriptors.string(raw.Uri) .. "</uri>"
+					or SourceType == Enum.ContentSourceType.Object and "<Ref>" .. GetRef(raw.Object)
+					.. "</Ref>" -- TODO Not sure, run tests
+			end,
+			ContentId = function(raw)
+				-- On newer clients, Content-typed props (Image, Texture, SoundId, MeshContent, ...) may read as
+				-- a Content userdata instead of a string. Extract its URI so they still serialize.
+				if type(raw) ~= "string" then
+					local ok, uri = pcall(function()
+						return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
+					end)
+					raw = (ok and uri) or ""
+				end
+				return raw == "" and "<null></null>" or "<url>" .. XML_Descriptors.string(raw) .. "</url>", "Content" -- TODO Remove "Content" str once Roblox fully releases Content DataType
+			end,
+		CoordinateFrame = function(raw)
+			return "<CFrame>" .. XML_Descriptors.CFrame(raw) .. "</CFrame>"
+		end,
+			if not asset_manifest_enabled then
+				return
+			end
+			local uri = ""
+			if type(raw) == "string" then
+				uri = raw
+			else
+				local ok, got = pcall(function()
+					return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
+				end)
+				uri = (ok and got) or ""
+			end
+			if uri ~= "" then
+				asset_manifest_set[uri] = { Instance = instanceName, Property = propName }
+			end
+		end,
 	-- DateTime = function(raw) return raw.UnixTimestampMillis end, -- ? Not sure
 	Faces = function(raw)
 		-- The text of this element is formatted as an integer between 0 and 63
@@ -2865,7 +2886,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		IgnoreProperties = {},
 
-		IgnoreList = { "CoreGui", "CorePackages" },
+		-- * Pattern-based and tag-based filtering (kept separate from IgnoreList so they don't conflict with its instance/class matching)
+			IgnoreNamePatterns = {}, -- Array of Lua patterns/globs matched against instance.Name
+			IgnoreTags = {},         -- Array of CollectionService tag names; instances carrying ANY of these tags are skipped
+			SaveOnlyTags = {},       -- Array of CollectionService tag names; ONLY instances carrying at least ONE of these tags are saved (ignored when empty)
+
+			IgnoreList = { "CoreGui", "CorePackages" },
 
 		ExtraInstances = {},
 		NilInstances = false,
@@ -2940,9 +2966,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		NeutralizeLighting = false,
 
 		-- * ExportObj: also write a world-space .obj of all MeshPart geometry (recovered via EditableMesh) next to the save, so PRIVATE meshes that show as grey boxes in Studio can be recovered/viewed in Blender. Pair with SetStreaming. Large on big maps.
-		ExportObj = false,
+			ExportObj = false,
 
-		-- * Decompilation prepass: parallel-decompile all client scripts via an external API before saving (big speedup on script-heavy games). RISKY: sends script bytecode to a third-party API.
+			-- * AssetManifest: collect every rbxassetid://, rbxasset://, and http:// URI referenced by Content/ContentId properties into a companion saveinstance-assets.txt list. Useful for recovering or cataloguing textures, sounds, meshes, decals, and animations alongside the save.
+			AssetManifest = false,
+
+			-- * Decompilation prepass: parallel-decompile all client scripts via an external API before saving (big speedup on script-heavy games). RISKY: sends script bytecode to a third-party API.
 		DecompilePrepass = false,
 		PrepassConcurrency = 24, -- parallel decompile requests kept in flight
 		PrepassRateGap = 0.12, -- min seconds between API requests (lua.expert rejects unthrottled bursts). Lower = faster if the API allows.
@@ -3111,6 +3140,23 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		__DEBUG_MODE = warn
 	end
 
+	-- Pattern & tag filtering setup
+	local IgnoreNamePatterns = OPTIONS.IgnoreNamePatterns
+	local IgnoreTagsDict, SaveOnlyTagsDict
+	local hasIgnorePatterns = type(IgnoreNamePatterns) == "table" and #IgnoreNamePatterns > 0
+
+	if type(OPTIONS.IgnoreTags) == "table" and #OPTIONS.IgnoreTags > 0 then
+		IgnoreTagsDict = ArrayToDict(OPTIONS.IgnoreTags)
+	end
+	if type(OPTIONS.SaveOnlyTags) == "table" and #OPTIONS.SaveOnlyTags > 0 then
+		SaveOnlyTagsDict = ArrayToDict(OPTIONS.SaveOnlyTags)
+	end
+
+	local CollectionService
+	if IgnoreTagsDict or SaveOnlyTagsDict then
+		CollectionService = service.CollectionService
+	end
+
 	local FilePath = OPTIONS.FilePath
 	local SaveCacheInterval = OPTIONS.SaveCacheInterval
 	local ToSaveInstance = OPTIONS.Object
@@ -3136,8 +3182,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
-	_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
-	if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
+		_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
+		asset_manifest_enabled = OPTIONS.AssetManifest == true
+		if asset_manifest_enabled then
+			table.clear(asset_manifest_set)
+		end
+		if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
 		debug_enabled = true
 		table.clear(debug_log)
 		debug_clock0 = os.clock()
@@ -3804,27 +3854,74 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return Item
 	end
 
-	local function save_hierarchy(hierarchy)
-		for _, instance in hierarchy do
-			if IgnoreNotArchivable and not instance.Archivable then
-				continue
-			end
-
-			local SkipEntirely = IgnoreList[instance]
-			if SkipEntirely then
-				continue
-			end
-
-			local ClassName = instance.ClassName
-
-			local InstanceName = instance.Name
-
-			do
-				local OnIgnoredList = IgnoreList[ClassName]
-				if OnIgnoredList and (OnIgnoredList == true or OnIgnoredList[InstanceName]) then
+		local function save_hierarchy(hierarchy)
+			for _, instance in hierarchy do
+				if IgnoreNotArchivable and not instance.Archivable then
 					continue
 				end
-			end
+
+				local SkipEntirely = IgnoreList[instance]
+				if SkipEntirely then
+					continue
+				end
+
+				local ClassName = instance.ClassName
+
+				local InstanceName = instance.Name
+
+				do
+					local OnIgnoredList = IgnoreList[ClassName]
+					if OnIgnoredList and (OnIgnoredList == true or OnIgnoredList[InstanceName]) then
+						continue
+					end
+				end
+
+				-- Pattern-based name matching (IgnoreNamePatterns)
+				if hasIgnorePatterns then
+					local skip = false
+					for _, pattern in IgnoreNamePatterns do
+						if type(pattern) == "string" and string_find(InstanceName, pattern) then
+							skip = true
+							break
+						end
+					end
+					if skip then
+						continue
+					end
+				end
+
+				-- Tag-based filtering (needs flag because nested for loops)
+				if IgnoreTagsDict or SaveOnlyTagsDict then
+					local skip = false
+					local tags = {}
+					local ok, instanceTags = pcall(CollectionService.GetTags, CollectionService, instance)
+					if ok then
+						tags = instanceTags
+					end
+					if SaveOnlyTagsDict then
+						local hasTag = false
+						for _, t in tags do
+							if SaveOnlyTagsDict[t] then
+								hasTag = true
+								break
+							end
+						end
+						if not hasTag then
+							skip = true
+						end
+					end
+					if not skip and IgnoreTagsDict then
+						for _, t in tags do
+							if IgnoreTagsDict[t] then
+								skip = true
+								break
+							end
+						end
+					end
+					if skip then
+						continue
+					end
+				end
 
 			if not DecompileIgnoring then
 				DecompileIgnoring = DecompileIgnore[instance]
@@ -4001,9 +4098,31 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 							end
 						end
 
-						-- Serialization start
+							-- AssetManifest: capture asset URIs from Content/ContentId and string properties
+							if asset_manifest_enabled then
+								if ValueType == "Content" or ValueType == "ContentId" then
+									local uri = ""
+									if type(raw) == "string" then
+										uri = raw
+									else
+										local ok, got = pcall(function()
+											return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
+										end)
+										uri = (ok and got) or ""
+									end
+									if uri ~= "" then
+										asset_manifest_set[uri] = { Instance = instance:GetFullName(), Property = PropertyName }
+									end
+								elseif ValueType == "string" and type(raw) == "string" then
+									if string_find(raw, "rbxassetid://") or string_find(raw, "rbxasset://") or string_find(raw, "http://") or string_find(raw, "https://") then
+										asset_manifest_set[raw] = { Instance = instance:GetFullName(), Property = PropertyName }
+									end
+								end
+							end
 
-						local tag, value
+							-- Serialization start
+
+							local tag, value
 						if Category == "Class" then
 							tag = "Ref"
 							if typeof(raw) == "Instance" then -- only serialize a Ref if the value is actually an Instance (a weird non-Instance value would otherwise error on raw.ClassName below)
@@ -4799,19 +4918,33 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			if OPTIONS.CapabilityReport then
 				write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
 			end
-			if debug_enabled then -- finish + write the debug log
-				dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))
-				dbg("[decompile] lua.expert total ok:", _api_ok, "| failed:", _api_fail)
-				if _api_first_fail then
-					dbg("[decompile] first API failure:", _api_first_fail)
+				if asset_manifest_enabled then
+					local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed), "assets:", }
+					local n = #lines
+					if next(asset_manifest_set) == nil then
+						lines[n + 1] = "(none found)"
+					else
+						for uri, meta in asset_manifest_set do
+							n += 1
+							lines[n] = uri .. "  --  " .. meta.Instance .. " [" .. meta.Property .. "]"
+						end
+					end
+					local wrote = writefile and pcall(writefile, "saveinstance-assets.txt", table.concat(lines, "\n"))
+					print("[saveinstance] Asset manifest " .. (wrote and "written to saveinstance-assets.txt" or "could not be written"))
 				end
-				if not ok then
-					dbg("[save] ERROR:", err)
+				if debug_enabled then -- finish + write the debug log
+					dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))
+					dbg("[decompile] lua.expert total ok:", _api_ok, "| failed:", _api_fail)
+					if _api_first_fail then
+						dbg("[decompile] first API failure:", _api_first_fail)
+					end
+					if not ok then
+						dbg("[save] ERROR:", err)
+					end
+					local wrote = pcall(writefile, "saveinstance-debug.txt", table.concat(debug_log, "\n"))
+					print("[saveinstance] Debug log " .. (wrote and "written to saveinstance-debug.txt (in your executor's workspace)" or "could not be written"))
 				end
-				local wrote = pcall(writefile, "saveinstance-debug.txt", table.concat(debug_log, "\n"))
-				print("[saveinstance] Debug log " .. (wrote and "written to saveinstance-debug.txt (in your executor's workspace)" or "could not be written"))
 			end
-		end
 
 		if SafeMode then
 			service.GuiService:ClearError()
