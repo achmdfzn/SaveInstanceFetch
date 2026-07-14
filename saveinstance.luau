@@ -4205,7 +4205,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						RecoveredScripts
 						) .. "\n" or "")
 					.. [[
-		Thank you for using USSI modded by Robloxscripts.com (Join the Discord) discord.robloxscripts.com.
+		Thank you for using USSI modded by Bolohoutoh.
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
@@ -4268,7 +4268,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by USSI modded by Robloxscripts.com (Join the Discord) discord.robloxscripts.com -->"
+			"</roblox><!-- Saved by USSI modded by Bolohoutoh-->"
 		savebuffer_size += 1
 		save_cache(true)
 		do
