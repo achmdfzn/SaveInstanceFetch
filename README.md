@@ -13,6 +13,7 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 - **Private mesh recovery path** - `ExportObj` can bake MeshPart geometry into a world-space `.obj` file
 - **Cleaner saved scenes** - `NeutralizeLighting` can reset dark/foggy lighting before save
 - **Debuggable decompile flow** - `Debug`, `CapabilityReport`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
+- **Persistent decompile cache** - `PersistentCache` stores decompiled scripts on disk so repeat saves of the same game reuse them and skip the third-party API, cutting run time and data sent externally
 
 ## Installation
 
@@ -108,6 +109,8 @@ local Options = {
 - **SkipPrepass** - Skip cache warm-up and go straight to USSI (default: false)
 - **SkipSaveInstance** - Run only the prepass without calling USSI (default: false)
 - **UseSaveInstancePrepass** - Use `saveinstance.luau`'s built-in `DecompilePrepass` instead of the legacy prepass hook (default: false)
+- **PersistentCache** - Save decompiled scripts to disk and reuse them on later runs, so repeat saves of the same game skip the decompile API entirely. Requires an executor with `writefile`/`readfile`/`isfile`; falls back to in-memory caching if unavailable (default: true)
+- **CacheDir** - Workspace folder name used for the persistent cache (default: `saveinstance_decompile_cache`)
 - **RepoURL** - Override the repository URL used to load `saveinstance.luau` (default: this repository)
 - **ScriptName** - Override the loaded script name without changing the wrapper (default: `saveinstance`)
 

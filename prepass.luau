@@ -37,6 +37,8 @@ local Config = {
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
     ScriptName = "saveinstance",
     Verbose = true,
+    PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
+    CacheDir = "saveinstance_decompile_cache", -- workspace folder used when PersistentCache is on
 }
 
 local function Base64Encode(Data)
@@ -65,6 +67,97 @@ end
 
 local Cache = {}
 local NextSlot = 0
+
+-- Persistent (on-disk) decompile cache. Optional: only used when the executor
+-- exposes file APIs and Config.PersistentCache is enabled. Falls back silently
+-- to the in-memory Cache above when unavailable.
+local WriteFile = writefile
+local ReadFile = readfile
+local IsFile = isfile
+local IsFolder = isfolder
+local MakeFolder = makefolder
+
+local DiskCache = {
+    Enabled = false,
+    Dir = nil,
+    Reads = 0,
+    Writes = 0,
+}
+
+-- Deterministic 32-bit FNV-1a hash rendered as hex, used for cache file names.
+-- Uses bit32 (Luau) for the XOR step; the multiply is split across two 16-bit
+-- halves to stay within exact double-precision integer range.
+local Bxor = (bit32 and bit32.bxor) or function(a, b)
+    local Result, Bit = 0, 1
+    while a > 0 or b > 0 do
+        local Abit, Bbit = a % 2, b % 2
+        if Abit ~= Bbit then
+            Result = Result + Bit
+        end
+        a = math.floor(a / 2)
+        b = math.floor(b / 2)
+        Bit = Bit * 2
+    end
+    return Result
+end
+
+local function HashBytecode(Data)
+    local Hi, Lo = 0x811c, 0x9dc5
+    for i = 1, #Data do
+        Lo = Bxor(Lo, Data:byte(i))
+        -- 32-bit FNV multiply by 16777619 (0x01000193), carried across two 16-bit halves
+        local L = Lo * 0x0193
+        local H = Hi * 0x0193 + Lo * 0x0100
+        Lo = L % 0x10000
+        Hi = (H + math.floor(L / 0x10000)) % 0x10000
+    end
+    return string.format("%04x%04x%d", Hi % 0x10000, Lo % 0x10000, #Data)
+end
+
+local function InitDiskCache()
+    if not Config.PersistentCache then return end
+    if not (WriteFile and ReadFile and IsFile) then
+        if Config.Verbose then
+            print("[prepass] persistent cache disabled: executor lacks writefile/readfile/isfile")
+        end
+        return
+    end
+    local Dir = tostring(Config.CacheDir or "saveinstance_decompile_cache")
+    if IsFolder and MakeFolder then
+        local Exists = pcall(IsFolder, Dir)
+        if not (Exists and IsFolder(Dir)) then
+            pcall(MakeFolder, Dir)
+        end
+    end
+    DiskCache.Enabled = true
+    DiskCache.Dir = Dir
+end
+
+local function DiskPath(Bytecode)
+    return DiskCache.Dir .. "/" .. HashBytecode(Bytecode) .. ".luau"
+end
+
+local function DiskCacheGet(Bytecode)
+    if not DiskCache.Enabled then return nil end
+    local Path = DiskPath(Bytecode)
+    local OkExists, Exists = pcall(IsFile, Path)
+    if not (OkExists and Exists) then return nil end
+    local OkRead, Body = pcall(ReadFile, Path)
+    if OkRead and type(Body) == "string" and Body ~= "" then
+        DiskCache.Reads += 1
+        return Body
+    end
+    return nil
+end
+
+local function DiskCacheSet(Bytecode, Body)
+    if not DiskCache.Enabled then return end
+    if type(Body) ~= "string" or Body == "" then return end
+    local Ok = pcall(WriteFile, DiskPath(Bytecode), Body)
+    if Ok then
+        DiskCache.Writes += 1
+    end
+end
 
 local function AcquireRateSlot()
     local RequestsPerMinute = math.max(1, tonumber(Config.RequestsPerMinute) or 1350)
@@ -305,10 +398,17 @@ local function Prepass()
         Dispatched += 1
         Ui:Update(Completed, Dispatched, Item.Name)
         if not Cache[Item.Bytecode] then
-            local Ok, Body = DecompileViaAPI(Item.Bytecode)
-            if Ok then
-                Cache[Item.Bytecode] = Body
+            local Disk = DiskCacheGet(Item.Bytecode)
+            if Disk then
+                Cache[Item.Bytecode] = Disk
                 OkCount += 1
+            else
+                local Ok, Body = DecompileViaAPI(Item.Bytecode)
+                if Ok then
+                    Cache[Item.Bytecode] = Body
+                    DiskCacheSet(Item.Bytecode, Body)
+                    OkCount += 1
+                end
             end
         end
         Completed += 1
@@ -318,7 +418,11 @@ local function Prepass()
     Ui:Destroy()
 
     if Config.Verbose then
-        print(("[prepass] cached %d / %d"):format(OkCount, Total))
+        if DiskCache.Enabled then
+            print(("[prepass] cached %d / %d (disk hits %d, disk writes %d)"):format(OkCount, Total, DiskCache.Reads, DiskCache.Writes))
+        else
+            print(("[prepass] cached %d / %d"):format(OkCount, Total))
+        end
     end
 end
 
@@ -336,6 +440,11 @@ local function InstallDecompileHook()
             if Hit then
                 return Hit
             end
+            local Disk = DiskCacheGet(Bc)
+            if Disk then
+                Cache[Bc] = Disk
+                return Disk
+            end
         end
 
         if OldDecompile then
@@ -346,6 +455,7 @@ local function InstallDecompileHook()
             local Good, Body = DecompileViaAPI(Bc)
             if Good then
                 Cache[Bc] = Body
+                DiskCacheSet(Bc, Body)
             end
             return Body
         end
@@ -396,6 +506,7 @@ return function(Options, PrepassOptions)
             print("[prepass] using saveinstance built-in DecompilePrepass")
         end
     else
+        InitDiskCache()
         if not PrepassOptions.SkipPrepass then
             InstallDecompileHook()
             Prepass()
@@ -403,6 +514,9 @@ return function(Options, PrepassOptions)
             InstallDecompileHook()
         elseif Config.Verbose then
             print("[prepass] SkipPrepass enabled; decompile hook not installed because executor capability is missing")
+        end
+        if Config.Verbose and DiskCache.Enabled then
+            print(("[prepass] persistent cache: %d read, %d written (dir: %s)"):format(DiskCache.Reads, DiskCache.Writes, tostring(DiskCache.Dir)))
         end
     end
 

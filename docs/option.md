@@ -57,6 +57,8 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 
 If your executor has no decompiler, scripts fall back to the free **lua.expert** API automatically.
 
+> The `prepass.luau` wrapper can additionally keep an on-disk decompile cache (`PersistentCache` / `CacheDir`) so repeat runs reuse previous results and re-send far less bytecode to the third-party API. See the PrepassOptions section in the README.
+
 | Option               | Default                    | What it does                                                                                                                                    |
 | -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DecompilePrepass`   | `false`                    | **Decompile every script in parallel** via lua.expert _before_ saving - big speedup on script-heavy games. Sends bytecode to a third-party API. |
