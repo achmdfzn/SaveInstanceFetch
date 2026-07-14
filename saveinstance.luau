@@ -2317,10 +2317,16 @@ local function acquire_api_slot(min_gap)
 	end
 end
 
+local function get_http_request()
+	local Syn = type(syn) == "table" and syn or nil
+	local Http = type(http) == "table" and http or nil
+	return request or http_request or (Syn and Syn.request) or (Http and Http.request)
+end
+
 -- Decompiles bytecode via an external HTTP API (default lua.expert). Returns the source, or nil.
 -- Shared by DecompilePrepass and by the auto-fallback decompiler (executors without their own).
 local function decompile_via_api(bc, apiUrl, min_gap)
-	local HttpRequest = request or http_request
+	local HttpRequest = get_http_request()
 	if not (HttpRequest and base64encode) then
 		return nil
 	end
@@ -2337,7 +2343,7 @@ local function decompile_via_api(bc, apiUrl, min_gap)
 	})
 	if not ok or type(res) ~= "table" or res.StatusCode ~= 200 then
 		_api_fail += 1
-		local detail = ok and ("HTTP " .. tostring(res and res.StatusCode) .. " — " .. tostring(res and res.Body))
+		local detail = ok and ("HTTP " .. tostring(res and res.StatusCode) .. " - " .. tostring(res and res.Body))
 			or ("error: " .. tostring(res))
 		_api_first_fail = _api_first_fail or detail
 		if not _api_warned then -- log the FIRST failure (status/body) so the reason is visible, without spamming
@@ -2351,7 +2357,7 @@ local function decompile_via_api(bc, apiUrl, min_gap)
 end
 
 local function RunDecompilePrepass(ldeccache, O, report)
-	local HttpRequest = request or http_request
+	local HttpRequest = get_http_request()
 	-- Prefer the executor's OWN decompiler if it has one (Volt now ships one) - no external API,
 	-- no rate limit, no lua.expert. Fall back to lua.expert only when there is no native decompiler.
 	local nativeDecompile = decompile or (getgenv and getgenv().decompile)
@@ -2359,7 +2365,7 @@ local function RunDecompilePrepass(ldeccache, O, report)
 		return false, "needs getscriptbytecode + a hash function"
 	end
 	if not nativeDecompile and not (HttpRequest and base64encode) then
-		return false, "needs a native decompiler, or request/http_request for the lua.expert fallback"
+		return false, "needs a native decompiler, or a supported HTTP request function for the lua.expert fallback"
 	end
 
 	local apiUrl = O.PrepassApiUrl or "https://api.lua.expert/decompile"
@@ -2504,22 +2510,22 @@ local function report_executor_support(O)
 		missing[#missing + 1] = "getscriptbytecode  ->  script caching disabled"
 	end
 	if not decompile and not O.noscripts then
-		if (request or http_request) and base64encode and getscriptbytecode then
-			print("[saveinstance] No executor decompiler — falling back to the lua.expert API to decompile scripts.")
+		if get_http_request() and base64encode and getscriptbytecode then
+			print("[saveinstance] No executor decompiler - falling back to the lua.expert API to decompile scripts.")
 		else
-			missing[#missing + 1] = "decompile (no API fallback: needs request/http_request)  ->  scripts will not be decompiled"
+			missing[#missing + 1] = "decompile (no API fallback: needs supported HTTP request function)  ->  scripts will not be decompiled"
 		end
 	end
 	if O.SetStreaming and not sethiddenproperty then
 		missing[#missing + 1] = "sethiddenproperty  ->  SetStreaming can't fully pin streamed content (may be less reliable)"
 	end
-	if O.DecompilePrepass and not (request or http_request) then
-		missing[#missing + 1] = "request/http_request  ->  DecompilePrepass can't reach the decompile API (it will be skipped)"
+	if O.DecompilePrepass and not get_http_request() then
+		missing[#missing + 1] = "HTTP request function  ->  DecompilePrepass can't reach the decompile API (it will be skipped)"
 	end
 	if #missing == 0 then
 		return
 	end
-	warn("[saveinstance] Executor '" .. (EXECUTOR_NAME ~= "" and EXECUTOR_NAME or "Unknown") .. "' — some capabilities are unavailable; the save may be incomplete:")
+	warn("[saveinstance] Executor '" .. (EXECUTOR_NAME ~= "" and EXECUTOR_NAME or "Unknown") .. "' - some capabilities are unavailable; the save may be incomplete:")
 	for _, m in missing do
 		warn("   - " .. m)
 	end
@@ -3062,7 +3068,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		debug_clock0 = os.clock()
 		dbg("=== saveinstance debug log ===")
 		dbg("executor:", EXECUTOR_NAME ~= "" and EXECUTOR_NAME or "Unknown", "| client:", CLIENT_VERSION, "| StreamingEnabled:", workspace.StreamingEnabled, "| place:", game.PlaceId)
-		dbg("caps: gethiddenproperty=", gethiddenproperty ~= nil, "getscriptbytecode=", getscriptbytecode ~= nil, "decompile=", decompile ~= nil, "request/http_request=", (request or http_request) ~= nil, "sethiddenproperty=", sethiddenproperty ~= nil, "base64encode=", base64encode ~= nil, "getloadedmodules=", getloadedmodules ~= nil, "sha384=", sha384 ~= nil)
+		dbg("caps: gethiddenproperty=", gethiddenproperty ~= nil, "getscriptbytecode=", getscriptbytecode ~= nil, "decompile=", decompile ~= nil, "http_request=", get_http_request() ~= nil, "sethiddenproperty=", sethiddenproperty ~= nil, "base64encode=", base64encode ~= nil, "getloadedmodules=", getloadedmodules ~= nil, "sha384=", sha384 ~= nil)
 		dbg("options: mode=", OPTIONS.mode, "noscripts=", OPTIONS.noscripts, "SetStreaming=", OPTIONS.SetStreaming, "DecompilePrepass=", OPTIONS.DecompilePrepass, "IgnoreSpecialProperties=", OPTIONS.IgnoreSpecialProperties, "UseUGCValidationService=", OPTIONS.UseUGCValidationService, "StreamingMaxTime=", OPTIONS.StreamingMaxTime, "StreamingConcurrency=", OPTIONS.StreamingConcurrency, "StreamingAreaSize=", OPTIONS.StreamingAreaSize, "PrepassRateGap=", OPTIONS.PrepassRateGap)
 	end
 
@@ -3459,11 +3465,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			-- Call getscriptbytecode DIRECTLY (like the proven getgenv().decompile reference), NOT through
 			-- the coroutine-timeout `getbytecode` wrapper — that wrapper returned failure in the save
 			-- context on Volt, so the API was never reached.
-			local canApi = (request or http_request) and base64encode and getscriptbytecode and true or false
+			local canApi = get_http_request() and base64encode and getscriptbytecode and true or false
 			print(string.format(
-				"[saveinstance] lua.expert decompiler setup: canApi=%s (request=%s base64encode=%s getscriptbytecode=%s)",
+				"[saveinstance] lua.expert decompiler setup: canApi=%s (http=%s base64encode=%s getscriptbytecode=%s)",
 				tostring(canApi),
-				tostring((request or http_request) ~= nil),
+				tostring(get_http_request() ~= nil),
 				tostring(base64encode ~= nil),
 				tostring(getscriptbytecode ~= nil)
 			))

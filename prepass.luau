@@ -1,4 +1,6 @@
-local HttpRequest = request or http_request
+local Syn = type(syn) == "table" and syn or nil
+local Http = type(http) == "table" and http or nil
+local HttpRequest = request or http_request or (Syn and Syn.request) or (Http and Http.request)
 
 local cloneref = cloneref or function(o) return o end
 
@@ -39,6 +41,11 @@ local Config = {
 
 local function Base64Encode(Data)
     if base64_encode then return base64_encode(Data) end
+    if base64encode then return base64encode(Data) end
+    if type(crypt) == "table" then
+        if crypt.base64encode then return crypt.base64encode(Data) end
+        if crypt.base64 and crypt.base64.encode then return crypt.base64.encode(Data) end
+    end
     local B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     return ((Data:gsub(".", function(x)
         local R, Byte = "", x:byte()
