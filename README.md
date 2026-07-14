@@ -44,6 +44,9 @@ local PrepassOptions = {
     SkipPrepass = false, -- skip cache warm-up, go straight to saveinstance
     SkipSaveInstance = false, -- run only the prepass, don't call saveinstance
     UseSaveInstancePrepass = false, -- set true to use saveinstance's built-in DecompilePrepass instead
+    PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
+    CacheDir = "saveinstance_decompile_cache", -- workspace folder for the persistent cache
+    ClearCache = false, -- wipe the cache before this run to force a fresh decompile
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
     ScriptName = "saveinstance",
 }
@@ -111,6 +114,7 @@ local Options = {
 - **UseSaveInstancePrepass** - Use `saveinstance.luau`'s built-in `DecompilePrepass` instead of the legacy prepass hook (default: false)
 - **PersistentCache** - Save decompiled scripts to disk and reuse them on later runs, so repeat saves of the same game skip the decompile API entirely. Requires an executor with `writefile`/`readfile`/`isfile`; falls back to in-memory caching if unavailable (default: true)
 - **CacheDir** - Workspace folder name used for the persistent cache (default: `saveinstance_decompile_cache`)
+- **ClearCache** - Delete the persistent cache folder before the run, forcing a fresh decompile of every script. Useful when your executor's decompiler has improved or the cache is suspected stale. Requires `delfile`/`delfolder` support (default: false)
 - **RepoURL** - Override the repository URL used to load `saveinstance.luau` (default: this repository)
 - **ScriptName** - Override the loaded script name without changing the wrapper (default: `saveinstance`)
 

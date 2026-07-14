@@ -39,6 +39,7 @@ local Config = {
     Verbose = true,
     PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
     CacheDir = "saveinstance_decompile_cache", -- workspace folder used when PersistentCache is on
+    ClearCache = false, -- wipe the on-disk cache before this run (use when cached results are stale)
 }
 
 local function Base64Encode(Data)
@@ -114,6 +115,34 @@ local function HashBytecode(Data)
     return string.format("%04x%04x%d", Hi % 0x10000, Lo % 0x10000, #Data)
 end
 
+local DelFile = delfile
+local DelFolder = delfolder
+local ListFiles = listfiles
+
+-- Remove previously cached decompile results. Prefers deleting the whole folder;
+-- falls back to deleting individual files, then no-ops if neither API exists.
+local function ClearDiskCache(Dir)
+    local Removed = 0
+    if DelFolder then
+        local Ok = pcall(DelFolder, Dir)
+        if Ok then
+            if MakeFolder then pcall(MakeFolder, Dir) end
+            return -1 -- signals "whole folder cleared"
+        end
+    end
+    if ListFiles and DelFile then
+        local OkList, Files = pcall(ListFiles, Dir)
+        if OkList and type(Files) == "table" then
+            for _, Path in next, Files do
+                if pcall(DelFile, Path) then
+                    Removed += 1
+                end
+            end
+        end
+    end
+    return Removed
+end
+
 local function InitDiskCache()
     if not Config.PersistentCache then return end
     if not (WriteFile and ReadFile and IsFile) then
@@ -127,6 +156,16 @@ local function InitDiskCache()
         local Exists = pcall(IsFolder, Dir)
         if not (Exists and IsFolder(Dir)) then
             pcall(MakeFolder, Dir)
+        end
+    end
+    if Config.ClearCache then
+        local Cleared = ClearDiskCache(Dir)
+        if Config.Verbose then
+            if Cleared == -1 then
+                print("[prepass] cleared decompile cache folder before run")
+            else
+                print(("[prepass] cleared %d cached decompile file(s) before run"):format(Cleared))
+            end
         end
     end
     DiskCache.Enabled = true
