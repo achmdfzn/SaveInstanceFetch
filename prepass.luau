@@ -349,7 +349,7 @@ return function(Options, PrepassOptions)
         return
     end
 
-    local RepoURL = "https://raw.githubusercontent.com/RiseBlox/UltraSmartSaveInstance/main/"
+    local RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/"
     local ScriptName = "saveinstance"
     local smartsaveinstance = loadstring(game:HttpGet(RepoURL .. ScriptName .. ".luau", true), ScriptName)()
 
