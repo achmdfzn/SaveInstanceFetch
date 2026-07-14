@@ -4039,7 +4039,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by USSI modded by Robloxscripts.com (Join the Discord) discord.robloxscripts.com\n"
+										value = "-- Saved by USSI modded by Sashenka\n"
 											.. "\n"
 											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
 											.. value
@@ -4205,7 +4205,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						RecoveredScripts
 						) .. "\n" or "")
 					.. [[
-		Thank you for using USSI modded by Bolohoutoh.
+		Thank you for using USSI modded by Sashenka.
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
@@ -4268,7 +4268,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by USSI modded by Bolohoutoh-->"
+			"</roblox><!-- Saved by USSI modded by Sashenka-->"
 		savebuffer_size += 1
 		save_cache(true)
 		do
