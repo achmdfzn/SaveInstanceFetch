@@ -4,7 +4,7 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 
 ## Features
 
-- **Faster, lighter saves** - Uses table buffer instead of repeated string concatenation, fixing the O(n²) growth that caused "not enough memory" on large games
+- **Faster, lighter saves** - Uses table buffer instead of repeated string concatenation, fixing the O(n^2) growth that caused "not enough memory" on large games
 - **Terrain support** - SmoothGrid and PhysicsGrid are serialized and render properly
 - **Unions render correctly** - Re-enabled gethiddenproperty during save to read union's MeshData2
 - **Part properties preserved** - Color and Size are saved using official Roblox CDN API dump
@@ -24,21 +24,37 @@ local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmd
 
 ## Usage
 
-```lua
+Recommended wrapper usage keeps the legacy prepass cache hook enabled, then loads this repository's `saveinstance.luau`.
+
+```luau
 local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
-local Options = {} -- Full list @ https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance
+local Options = {
+    -- Full list @ https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance
+}
 
 local PrepassOptions = {
     RequestsPerMinute = 1350,
-    MaxInFlight       = 30,
-    ApiUrl            = "https://api.lua.expert/decompile",
-    Verbose           = true,
-    SkipPrepass       = false, -- skip cache warm-up, go straight to USSI
-    SkipSaveInstance  = false, -- run only the prepass, don't call USSI
+    MaxInFlight = 30,
+    RequestTimeout = 20,
+    ApiUrl = "https://api.lua.expert/decompile",
+    Verbose = true,
+    SkipPrepass = false, -- skip cache warm-up, go straight to saveinstance
+    SkipSaveInstance = false, -- run only the prepass, don't call saveinstance
+    UseSaveInstancePrepass = false, -- set true to use saveinstance's built-in DecompilePrepass instead
+    RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
+    ScriptName = "saveinstance",
 }
 
 prepass(Options, PrepassOptions)
+```
+
+To use the newer built-in `DecompilePrepass` from `saveinstance.luau` instead of the legacy hook, set:
+
+```luau
+local PrepassOptions = {
+    UseSaveInstancePrepass = true,
+}
 ```
 
 ## Configuration Options
@@ -48,15 +64,19 @@ prepass(Options, PrepassOptions)
 - **RequestsPerMinute** - Maximum number of API requests per minute (default: 1350)
 - **MaxInFlight** - Maximum concurrent requests (default: 30)
 - **ApiUrl** - Decompiler API endpoint (default: "https://api.lua.expert/decompile")
+- **RequestTimeout** - Per-request decompile API timeout in seconds (default: 20)
 - **Verbose** - Enable detailed logging (default: true)
 - **SkipPrepass** - Skip cache warm-up and go straight to USSI (default: false)
 - **SkipSaveInstance** - Run only the prepass without calling USSI (default: false)
+- **UseSaveInstancePrepass** - Use `saveinstance.luau`'s built-in `DecompilePrepass` instead of the legacy prepass hook (default: false)
+- **RepoURL** - Override the repository URL used to load `saveinstance.luau` (default: this repository)
+- **ScriptName** - Override the loaded script name without changing the wrapper (default: `saveinstance`)
 
 ## What's Different from the Original
 
 This version improves upon the original USSI implementation with several key enhancements:
 
-1. **Memory optimization** - Fixed O(n²) string concatenation issue
+1. **Memory optimization** - Fixed O(n^2) string concatenation issue
 2. **Enhanced terrain support** - Proper serialization of SmoothGrid and PhysicsGrid
 3. **Union mesh preservation** - Correct handling of MeshData2 with fallback to visible bounding-box
 4. **Accurate part rendering** - Uses official Roblox API dump for Color3uint8 and size members

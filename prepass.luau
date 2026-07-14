@@ -1,7 +1,4 @@
-assert(getscriptbytecode, "executor does not support getscriptbytecode")
-
 local HttpRequest = request or http_request
-assert(HttpRequest, "executor does not support an http request function")
 
 local cloneref = cloneref or function(o) return o end
 
@@ -10,6 +7,7 @@ local workspace = cloneref(workspace)
 
 local HttpService = cloneref(game:GetService("HttpService"))
 local RunService = cloneref(game:GetService("RunService"))
+local GlobalEnv = getgenv and getgenv() or _G or shared
 
 local CoreContainers = {}
 for _, ServiceName in next, { "CoreGui", "CorePackages", "RobloxReplicatedStorage", "RobloxLocalReplicatedStorage" } do
@@ -30,10 +28,12 @@ local function IsCoreInstance(o)
 end
 
 local Config = {
-    RequestsPerMinute = 1400,
+    RequestsPerMinute = 1350,
     MaxInFlight = 30,
     RequestTimeout = 20,
     ApiUrl  = "https://api.lua.expert/decompile",
+    RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
+    ScriptName = "saveinstance",
     Verbose = true,
 }
 
@@ -60,7 +60,8 @@ local Cache = {}
 local NextSlot = 0
 
 local function AcquireRateSlot()
-    local MinGap = 60 / Config.RequestsPerMinute
+    local RequestsPerMinute = math.max(1, tonumber(Config.RequestsPerMinute) or 1350)
+    local MinGap = 60 / RequestsPerMinute
     local Now = os.clock()
     local MySlot = NextSlot > Now and NextSlot or Now
     NextSlot = MySlot + MinGap
@@ -86,7 +87,8 @@ local function DecompileViaAPI(Bytecode)
         end
     end)
 
-    local Deadline = os.clock() + Config.RequestTimeout
+    local RequestTimeout = math.max(1, tonumber(Config.RequestTimeout) or 20)
+    local Deadline = os.clock() + RequestTimeout
     while not Settled and os.clock() < Deadline do
         task.wait(0.05)
     end
@@ -115,13 +117,17 @@ local function RunPool(Items, Worker)
         local i = NextIndex
         NextIndex += 1
         task.spawn(function()
-            Worker(Items[i])
+            local Ok, Err = pcall(Worker, Items[i])
+            if not Ok and Config.Verbose then
+                warn("[prepass] worker failed: " .. tostring(Err))
+            end
             Done += 1
             StartNext()
         end)
     end
 
-    for _ = 1, math.min(Config.MaxInFlight, Total) do
+    local MaxInFlight = math.max(1, tonumber(Config.MaxInFlight) or 30)
+    for _ = 1, math.min(MaxInFlight, Total) do
         StartNext()
     end
     while Done < Total do
@@ -271,7 +277,13 @@ local function CreateProgressUI(Total)
     }
 end
 
+local function AssertPrepassCapabilities()
+    assert(getscriptbytecode, "executor does not support getscriptbytecode")
+    assert(HttpRequest, "executor does not support an http request function")
+end
+
 local function Prepass()
+    AssertPrepassCapabilities()
     local Unique = GatherUniqueScripts()
     local Total = #Unique
     if Config.Verbose then
@@ -306,10 +318,10 @@ end
 local HookInstalled = false
 local function InstallDecompileHook()
     if HookInstalled then return end
+    AssertPrepassCapabilities()
     HookInstalled = true
-
-    local OldDecompile = getgenv().decompile
-    getgenv().decompile = function(Scr)
+    local OldDecompile = GlobalEnv.decompile
+    GlobalEnv.decompile = function(Scr)
         local Ok, Bc = pcall(getscriptbytecode, Scr)
         if Ok and type(Bc) == "string" and Bc ~= "" then
             local Hit = Cache[Bc]
@@ -333,25 +345,63 @@ local function InstallDecompileHook()
     end
 end
 
+local function LoadSaveInstance(PrepassOptions)
+    local RepoURL = PrepassOptions.RepoURL or Config.RepoURL
+    local ScriptName = PrepassOptions.ScriptName or Config.ScriptName
+    if string.sub(RepoURL, -1) ~= "/" then
+        RepoURL ..= "/"
+    end
+    if string.sub(ScriptName, -5) == ".luau" then
+        ScriptName = string.sub(ScriptName, 1, -6)
+    end
+    local Url = RepoURL .. ScriptName .. ".luau"
+
+    local Ok, Source = pcall(game.HttpGet, game, Url, true)
+    assert(Ok and type(Source) == "string" and Source ~= "", "[prepass] failed to download " .. Url)
+
+    local Loader, LoadErr = loadstring(Source, ScriptName)
+    assert(Loader, "[prepass] failed to compile " .. ScriptName .. ": " .. tostring(LoadErr))
+
+    local SaveInstance = Loader()
+    assert(type(SaveInstance) == "function", "[prepass] " .. ScriptName .. " did not return a function")
+    return SaveInstance
+end
+
 return function(Options, PrepassOptions)
+    Options = Options or {}
     PrepassOptions = PrepassOptions or {}
     for k, v in next, PrepassOptions do
         Config[k] = v
     end
 
-    InstallDecompileHook()
-
-    if not PrepassOptions.SkipPrepass then
-        Prepass()
+    if PrepassOptions.UseSaveInstancePrepass then
+        Options.DecompilePrepass = Options.DecompilePrepass ~= false
+        local MaxInFlight = math.max(1, tonumber(Config.MaxInFlight) or 30)
+        local RequestsPerMinute = math.max(1, tonumber(Config.RequestsPerMinute) or 1350)
+        Options.PrepassConcurrency = Options.PrepassConcurrency or MaxInFlight
+        Options.PrepassRateGap = Options.PrepassRateGap or (60 / RequestsPerMinute)
+        Options.PrepassApiUrl = Options.PrepassApiUrl or Config.ApiUrl
+        if PrepassOptions.MaxScripts and Options.PrepassMaxScripts == nil then
+            Options.PrepassMaxScripts = PrepassOptions.MaxScripts
+        end
+        if Config.Verbose then
+            print("[prepass] using saveinstance built-in DecompilePrepass")
+        end
+    else
+        if not PrepassOptions.SkipPrepass then
+            InstallDecompileHook()
+            Prepass()
+        elseif getscriptbytecode and HttpRequest then
+            InstallDecompileHook()
+        elseif Config.Verbose then
+            print("[prepass] SkipPrepass enabled; decompile hook not installed because executor capability is missing")
+        end
     end
 
     if PrepassOptions.SkipSaveInstance then
         return
     end
 
-    local RepoURL = "https://raw.githubusercontent.com/RiseBlox/UltraSmartSaveInstance/main/"
-    local ScriptName = "saveinstance"
-    local smartsaveinstance = loadstring(game:HttpGet(RepoURL .. ScriptName .. ".luau", true), ScriptName)()
-
-    return smartsaveinstance(Options or {})
+    local smartsaveinstance = LoadSaveInstance(PrepassOptions)
+    return smartsaveinstance(Options)
 end

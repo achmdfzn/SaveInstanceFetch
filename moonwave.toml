@@ -5,7 +5,7 @@ changelog = false
 [docusaurus]
 projectName = "SaveInstanceFetch"
 title = "SaveInstance Fetch"
-tagline = "Full Union, Terrain, Streaming, Mesh-Recovery & Decompile support — modded by Bolohoutoh
+tagline = "Full Union, Terrain, Streaming, Mesh-Recovery & Decompile support - modded by Bolohoutoh"
 url = "https://realslimshady2000.github.io"
 baseUrl = "/SaveInstanceFetch/"
 

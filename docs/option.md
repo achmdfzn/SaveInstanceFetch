@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Options Reference
 
-Every option is **optional** and **case-insensitive** — pass them in the table you give to
+Every option is **optional** and **case-insensitive** - pass them in the table you give to
 `synsaveinstance({ ... })`. Grouped by what they do. For the raw, exhaustive list see the
 [SynSaveInstance API](../api/SynSaveInstance).
 
@@ -20,14 +20,14 @@ synsaveinstance({
 | Option       | Default       | What it does                                                                                           |
 | ------------ | ------------- | ------------------------------------------------------------------------------------------------------ |
 | `mode`       | `"optimized"` | `"full"`, `"optimized"`, or `"scripts"`. `"optimized"` is smallest; use `"full"` for maximum fidelity. |
-| `noscripts`  | `false`       | Skip decompiling — save the map & structure only (scripts kept as empty instances).                    |
+| `noscripts`  | `false`       | Skip decompiling - save the map & structure only (scripts kept as empty instances).                    |
 | `SafeMode`   | `false`       | Kicks you from the game right before saving (anti-detection).                                          |
 | `ShowStatus` | `true`        | Show the on-screen progress bar.                                                                       |
-| `Debug`      | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) — send it for troubleshooting.          |
+| `Debug`      | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) - send it for troubleshooting.          |
 | `FilePath`   | _(auto)_      | Output file name (no extension). Defaults to `place <id> <name>`.                                      |
 | `Callback`   | `false`       | Receive the serialized string in a function instead of writing a file.                                 |
 
-## Map streaming — capture the whole map
+## Map streaming - capture the whole map
 
 Big **StreamingEnabled** maps only load chunks near you. These force-load the entire map first.
 
@@ -36,7 +36,7 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 | `SetStreaming`         | `false`        | **Force-load the whole StreamingEnabled map** before saving (alias: `Streaming`).            |
 | `StreamingAreaSize`    | `10000`        | Side length (studs) of the swept area. Raise for maps wider than 10k studs.                  |
 | `StreamingConcurrency` | `false` (auto) | Requests in flight at once. Auto-scales to map size; set a number to force.                  |
-| `StreamingMaxTime`     | `false` (auto) | Overall time cap for the sweep. Auto-scales (60s–15m); never hangs.                          |
+| `StreamingMaxTime`     | `false` (auto) | Overall time cap for the sweep. Auto-scales (60s-15m); never hangs.                          |
 | `StreamingTimeout`     | `20`           | Timeout for each `RequestStreamAroundAsync` request.                                         |
 | `StreamingChunkWait`   | `12`           | Max seconds to wait for one chunk (stability detection returns sooner).                      |
 | `StreamingSettleTime`  | `5`            | Wait after the sweep for terrain/background loads to finish (fixes floating-island terrain). |
@@ -48,8 +48,8 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 | Option               | Default  | What it does                                                                                                                                                                     |
 | -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NeutralizeLighting` | `false`  | Reset Lighting/Atmosphere/effects to clean midday so the place opens **bright**, not dark/foggy.                                                                                 |
-| `ExportObj`          | `false`  | Also bake all MeshPart geometry to a world-space `.obj` (opens in Blender) — the only way to recover **private** meshes that Studio can't re-download. Best with `SetStreaming`. |
-| `TreatUnionsAsParts` | `false`¹ | Convert Unions to plain Parts (for executors that can't read union mesh data). ¹`true` on Solara.                                                                                |
+| `ExportObj`          | `false`  | Also bake all MeshPart geometry to a world-space `.obj` (opens in Blender) - the only way to recover **private** meshes that Studio can't re-download. Best with `SetStreaming`. |
+| `TreatUnionsAsParts` | `false`1 | Convert Unions to plain Parts (for executors that can't read union mesh data). 1`true` on Solara.                                                                                |
 
 ## Decompiling scripts
 
@@ -57,7 +57,7 @@ If your executor has no decompiler, scripts fall back to the free **lua.expert**
 
 | Option               | Default                    | What it does                                                                                                                                    |
 | -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DecompilePrepass`   | `false`                    | **Decompile every script in parallel** via lua.expert _before_ saving — big speedup on script-heavy games. Sends bytecode to a third-party API. |
+| `DecompilePrepass`   | `false`                    | **Decompile every script in parallel** via lua.expert _before_ saving - big speedup on script-heavy games. Sends bytecode to a third-party API. |
 | `PrepassConcurrency` | `24`                       | Parallel decompile requests during the prepass.                                                                                                 |
 | `PrepassRateGap`     | `0.12`                     | Min seconds between API requests (lower = faster if the API allows).                                                                            |
 | `PrepassApiUrl`      | `api.lua.expert/decompile` | Decompile API endpoint.                                                                                                                         |
@@ -100,6 +100,6 @@ Try these only if a save crashes or corrupts.
 | `UseUGCValidationService`    | `true`  | Set `false` to never use `UGCValidationService` as a hidden-property fallback.   |
 | `AlternativeWritefile`       | `true`  | Write the file in segments (helps write-time crashes).                           |
 | `IgnoreDefaultPlayerScripts` | `true`  | Skip PlayerModule/RbxCharacterSounds (crash fix on some executors).              |
-| `SaveCacheInterval`          | `~57k`  | How often (bytes) to flush to file — lower = safer but slower.                   |
+| `SaveCacheInterval`          | `~57k`  | How often (bytes) to flush to file - lower = safer but slower.                   |
 
 > Full machine-generated reference (types, aliases, every field): **[SynSaveInstance API →](../api/SynSaveInstance)**
