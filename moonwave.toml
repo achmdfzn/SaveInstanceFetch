@@ -1,19 +1,19 @@
-title = "SaveInstance 420 Edition"
-gitRepoUrl = "https://github.com/RealSlimShady2000/SaveInstance420Edition"
+title = "SaveInstance Fetch"
+gitRepoUrl = "https://github.com/achmdfzn/SaveInstanceFetch"
 changelog = false
 
 [docusaurus]
-projectName = "SaveInstance420Edition"
-title = "SaveInstance 420 Edition"
-tagline = "Full Union, Terrain, Streaming, Mesh-Recovery & Decompile support — modded by Robloxscripts.com"
+projectName = "SaveInstanceFetch"
+title = "SaveInstance Fetch"
+tagline = "Full Union, Terrain, Streaming, Mesh-Recovery & Decompile support — modded by Bolohoutoh
 url = "https://realslimshady2000.github.io"
-baseUrl = "/SaveInstance420Edition/"
+baseUrl = "/SaveInstanceFetch/"
 
 [home]
 enabled = true
 includeReadme = true
 
 [[navbar.items]]
-href = "https://github.com/RealSlimShady2000/SaveInstance420Edition"
+href = "https://github.com/achmdfzn/SaveInstanceFetch"
 label = "GitHub"
 position = "right"

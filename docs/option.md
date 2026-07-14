@@ -37,6 +37,7 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 | `StreamingAreaSize`    | `10000`        | Side length (studs) of the swept area. Raise for maps wider than 10k studs.                  |
 | `StreamingConcurrency` | `false` (auto) | Requests in flight at once. Auto-scales to map size; set a number to force.                  |
 | `StreamingMaxTime`     | `false` (auto) | Overall time cap for the sweep. Auto-scales (60s–15m); never hangs.                          |
+| `StreamingTimeout`     | `20`           | Timeout for each `RequestStreamAroundAsync` request.                                         |
 | `StreamingChunkWait`   | `12`           | Max seconds to wait for one chunk (stability detection returns sooner).                      |
 | `StreamingSettleTime`  | `5`            | Wait after the sweep for terrain/background loads to finish (fixes floating-island terrain). |
 | `StreamingRadius`      | `1024`         | Per-request radius (auto-uses the game's `StreamingTargetRadius`).                           |
@@ -60,6 +61,7 @@ If your executor has no decompiler, scripts fall back to the free **lua.expert**
 | `PrepassConcurrency` | `24`                       | Parallel decompile requests during the prepass.                                                                                                 |
 | `PrepassRateGap`     | `0.12`                     | Min seconds between API requests (lower = faster if the API allows).                                                                            |
 | `PrepassApiUrl`      | `api.lua.expert/decompile` | Decompile API endpoint.                                                                                                                         |
+| `PrepassMaxScripts`  | `6000`                     | Skip full prepass above this many unique client scripts and fall back to on-demand decompile.                                                    |
 | `timeout`            | `10`                       | Per-script decompile timeout in seconds (alias: `DecompileTimeout`).                                                                            |
 | `SaveBytecode`       | `false`                    | Also embed each script's bytecode in the output.                                                                                                |
 | `DecompileJobless`   | `false`                    | Only include already-decompiled code; decompile nothing new.                                                                                    |

@@ -9,6 +9,10 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 - **Unions render correctly** - Re-enabled gethiddenproperty during save to read union's MeshData2
 - **Part properties preserved** - Color and Size are saved using official Roblox CDN API dump
 - **Media content supported** - Decals, images, and sounds are saved with proper Content DataType handling
+- **Whole-map streaming capture** - `SetStreaming` force-loads StreamingEnabled maps before saving
+- **Private mesh recovery path** - `ExportObj` can bake MeshPart geometry into a world-space `.obj` file
+- **Cleaner saved scenes** - `NeutralizeLighting` can reset dark/foggy lighting before save
+- **Debuggable decompile flow** - `Debug`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
 
 ## Installation
 
