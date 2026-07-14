@@ -1,9 +1,9 @@
-# UltraSmartSaveInstance
+# SaveInstanceFetch
 - A smart **SaveInstance** that correctly saves any games **the way they look**.
 
 ## Usage
 ```lua
-local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/RiseBlox/UltraSmartSaveInstance/main/prepass.luau", true))()
+local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
 local Options = {} -- Full list @ https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance
 
