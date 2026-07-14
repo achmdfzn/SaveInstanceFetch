@@ -1243,7 +1243,7 @@ if CLIENT_VERSION < math.huge then -- math.huge because unknown yet
 	XML_Descriptors.Content = XML_Descriptors.ContentId
 end
 
-local ClassList
+local ClassList, FetchAPI
 
 do
 	local ClassPropertyExceptions = {
@@ -1530,7 +1530,7 @@ do
 		},
 	}
 
-	local function FetchAPI()
+	FetchAPI = function()
 		-- Credits @MaximumADHD
 
 		local FILE_NAME = "API_DUMP.json"
@@ -2748,6 +2748,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		local setthreadidentity = global_container.setthreadidentity
 		if setthreadidentity then
 			pcall(setthreadidentity, 8) -- ? Arceus X Fix
+		end
+	end
+
+	if not ClassList then
+		local ok, result = pcall(FetchAPI)
+		if ok and result then
+			ClassList = result
+		else
+			warn('Failed to load the API Dump')
+			warn(result)
+			GLOBAL_ENV.USSI = nil
+			return
 		end
 	end
 
