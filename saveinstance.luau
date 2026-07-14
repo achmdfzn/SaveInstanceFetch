@@ -2766,7 +2766,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local currentparts, currentsize, totalsize, chunks = {}, 0, 0, table.create(1) -- ! currentparts holds string pieces that get concatenated once per chunk (avoids the O(n^2) growth of `..=` that caused "not enough memory")
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-		'<!-- Saved by USSI modded by Robloxscripts.com (Join the Discord) discord.robloxscripts.com --><roblox version="4">'
+		'<!-- Saved by USSI modded by Sashenka --><roblox version="4">'
 
 	local StatusText
 	local ProgressFill -- * Progress-bar fill frame (created in the ShowStatus block below)
