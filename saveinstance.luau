@@ -967,23 +967,7 @@ XML_Descriptors = {
 		CoordinateFrame = function(raw)
 			return "<CFrame>" .. XML_Descriptors.CFrame(raw) .. "</CFrame>"
 		end,
-			if not asset_manifest_enabled then
-				return
-			end
-			local uri = ""
-			if type(raw) == "string" then
-				uri = raw
-			else
-				local ok, got = pcall(function()
-					return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
-				end)
-				uri = (ok and got) or ""
-			end
-			if uri ~= "" then
-				asset_manifest_set[uri] = { Instance = instanceName, Property = propName }
-			end
-		end,
-	-- DateTime = function(raw) return raw.UnixTimestampMillis end, -- ? Not sure
+		-- DateTime = function(raw) return raw.UnixTimestampMillis end, -- ? Not sure
 	Faces = function(raw)
 		-- The text of this element is formatted as an integer between 0 and 63
 		return "<faces>" .. __BIT(raw.Right, raw.Top, raw.Back, raw.Left, raw.Bottom, raw.Front) .. "</faces>"
@@ -3276,33 +3260,33 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local IgnoreNotArchivable = not OPTIONS.IgnoreNotArchivable
 	local IgnorePropertiesOfNotScriptsOnScriptsMode = OPTIONS.IgnorePropertiesOfNotScriptsOnScriptsMode
 
-		if OPTIONS.FullUnionTerrainSupport then
-			OPTIONS.SetStreaming = true
-			OPTIONS.IgnoreSpecialProperties = false
-			OPTIONS.TreatUnionsAsParts = false
-			if CustomOptions_valid.StreamingSettleTime == nil then
-				OPTIONS.StreamingSettleTime = math.max(tonumber(OPTIONS.StreamingSettleTime) or 5, 8)
-			end
-			if CustomOptions_valid.CapabilityReport == nil then
-				OPTIONS.CapabilityReport = true
-			end
-			if CustomOptions_valid.VerifySave == nil then
-				OPTIONS.VerifySave = true
-			end
+	if OPTIONS.FullUnionTerrainSupport then
+		OPTIONS.SetStreaming = true
+		OPTIONS.IgnoreSpecialProperties = false
+		OPTIONS.TreatUnionsAsParts = false
+		if CustomOptions_valid.StreamingSettleTime == nil then
+			OPTIONS.StreamingSettleTime = math.max(tonumber(OPTIONS.StreamingSettleTime) or 5, 8)
 		end
+		if CustomOptions_valid.CapabilityReport == nil then
+			OPTIONS.CapabilityReport = true
+		end
+		if CustomOptions_valid.VerifySave == nil then
+			OPTIONS.VerifySave = true
+		end
+	end
 
-		_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
-		asset_manifest_enabled = OPTIONS.AssetManifest == true
-		if asset_manifest_enabled then
-			table.clear(asset_manifest_set)
+	_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
+	asset_manifest_enabled = OPTIONS.AssetManifest == true
+	if asset_manifest_enabled then
+		table.clear(asset_manifest_set)
+	end
+	verify_stats_enabled = OPTIONS.VerifySave == true
+	if verify_stats_enabled then
+		for k in verify_stats do
+			verify_stats[k] = 0
 		end
-		verify_stats_enabled = OPTIONS.VerifySave == true
-		if verify_stats_enabled then
-			for k in verify_stats do
-				verify_stats[k] = 0
-			end
-		end
-		if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
+	end
+	if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
 		debug_enabled = true
 		table.clear(debug_log)
 		debug_clock0 = os.clock()
@@ -5068,38 +5052,38 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				))
 			end
 			if OPTIONS.CapabilityReport then
-					write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
-				end
-				if OPTIONS.VerifySave then
-					write_verify_report(OPTIONS, ok, elapsed)
-				end
-					if asset_manifest_enabled then
-					local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed), "assets:", }
-					local n = #lines
-					if next(asset_manifest_set) == nil then
-						lines[n + 1] = "(none found)"
-					else
-						for uri, meta in asset_manifest_set do
-							n += 1
-							lines[n] = uri .. "  --  " .. meta.Instance .. " [" .. meta.Property .. "]"
-						end
-					end
-					local wrote = writefile and pcall(writefile, "saveinstance-assets.txt", table.concat(lines, "\n"))
-					print("[saveinstance] Asset manifest " .. (wrote and "written to saveinstance-assets.txt" or "could not be written"))
-				end
-				if debug_enabled then -- finish + write the debug log
-					dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))
-					dbg("[decompile] lua.expert total ok:", _api_ok, "| failed:", _api_fail)
-					if _api_first_fail then
-						dbg("[decompile] first API failure:", _api_first_fail)
-					end
-					if not ok then
-						dbg("[save] ERROR:", err)
-					end
-					local wrote = pcall(writefile, "saveinstance-debug.txt", table.concat(debug_log, "\n"))
-					print("[saveinstance] Debug log " .. (wrote and "written to saveinstance-debug.txt (in your executor's workspace)" or "could not be written"))
-				end
+				write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
 			end
+			if OPTIONS.VerifySave then
+				write_verify_report(OPTIONS, ok, elapsed)
+			end
+			if asset_manifest_enabled then
+				local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed), "assets:", }
+				local n = #lines
+				if next(asset_manifest_set) == nil then
+					lines[n + 1] = "(none found)"
+				else
+					for uri, meta in asset_manifest_set do
+						n += 1
+						lines[n] = uri .. "  --  " .. meta.Instance .. " [" .. meta.Property .. "]"
+					end
+				end
+				local wrote = writefile and pcall(writefile, "saveinstance-assets.txt", table.concat(lines, "\n"))
+				print("[saveinstance] Asset manifest " .. (wrote and "written to saveinstance-assets.txt" or "could not be written"))
+			end
+			if debug_enabled then -- finish + write the debug log
+				 dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))
+				 dbg("[decompile] lua.expert total ok:", _api_ok, "| failed:", _api_fail)
+				 if _api_first_fail then
+					 dbg("[decompile] first API failure:", _api_first_fail)
+				 end
+				 if not ok then
+					 dbg("[save] ERROR:", err)
+				 end
+				 local wrote = pcall(writefile, "saveinstance-debug.txt", table.concat(debug_log, "\n"))
+				 print("[saveinstance] Debug log " .. (wrote and "written to saveinstance-debug.txt (in your executor's workspace)" or "could not be written"))
+			end
+		end
 
 		if SafeMode then
 			service.GuiService:ClearError()
