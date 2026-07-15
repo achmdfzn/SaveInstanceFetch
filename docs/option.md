@@ -25,6 +25,7 @@ synsaveinstance({
 | `ShowStatus` | `true`        | Show the on-screen progress bar.                                                                       |
 | `Debug`            | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) - send it for troubleshooting.           |
 | `CapabilityReport` | `false`       | Write `saveinstance-capabilities.txt` with executor support and likely save limitations.                |
+| `VerifySave`       | `false`       | Write `saveinstance-verify.txt` counting scripts decompiled, unions with mesh, and MeshParts recovered. |
 | `FilePath`         | _(auto)_      | Output file name (no extension). Defaults to `place <id> <name>`.                                      |
 | `Callback`         | `false`       | Receive the serialized string in a function instead of writing a file.                                 |
 
@@ -66,10 +67,13 @@ If your executor has no decompiler, scripts fall back to the free **lua.expert**
 | `PrepassConcurrency` | `24`                       | Parallel decompile requests during the prepass.                                                                                                 |
 | `PrepassRateGap`     | `0.12`                     | Min seconds between API requests (lower = faster if the API allows).                                                                            |
 | `PrepassApiUrl`      | `api.lua.expert/decompile` | Decompile API endpoint.                                                                                                                         |
-| `PrepassMaxScripts`  | `6000`                     | Skip full prepass above this many unique client scripts and fall back to on-demand decompile.                                                    |
-| `timeout`            | `10`                       | Per-script decompile timeout in seconds (alias: `DecompileTimeout`).                                                                            |
-| `SaveBytecode`       | `false`                    | Also embed each script's bytecode in the output.                                                                                                |
-| `DecompileJobless`   | `false`                    | Only include already-decompiled code; decompile nothing new.                                                                                    |
+| `PrepassMaxScripts`          | `6000`                     | Skip full prepass above this many unique client scripts and fall back to on-demand decompile.                                                    |
+| `timeout`                    | `10`                       | Per-script decompile timeout in seconds (alias: `DecompileTimeout`).                                                                            |
+| `SaveBytecode`               | `false`                    | Also embed each script's bytecode in the output.                                                                                                |
+| `DecompileJobless`           | `false`                    | Only include already-decompiled code; decompile nothing new.                                                                                    |
+| `ResumeSave`                 | `false`                    | Persist the decompile cache to disk during prepass and reload it on the next run (resumes after a crash).                                       |
+| `ResumeCacheDir`             | `"saveinstance_resume_cache"` | Folder used to store the resume checkpoint JSON.                                                                                             |
+| `ResumeCheckpointInterval`   | `200`                      | How many scripts decompiled between disk flushes (0 = flush only at the end).                                                                   |
 
 ## Choosing what to save
 

@@ -338,6 +338,22 @@ local _api_ok, _api_fail, _api_first_fail = 0, 0, nil -- lua.expert decompile ou
 -- Enabled when the AssetManifest option is true; written to disk at the end of the save.
 local asset_manifest_enabled = false
 local asset_manifest_set = {}
+
+-- VerifySave: per-run statistics collected during traversal and written at the end.
+local verify_stats_enabled = false
+local verify_stats = {
+	scripts_total = 0,
+	scripts_decompiled = 0,
+	scripts_failed = 0,
+	unions_total = 0,
+	unions_mesh_ok = 0,
+	unions_mesh_missing = 0,
+	meshparts_total = 0,
+	meshparts_data_ok = 0,
+	meshparts_data_missing = 0,
+	instances_total = 0,
+}
+
 local function dbg(...)
 	if not debug_enabled then
 		return
@@ -2379,6 +2395,45 @@ local function decompile_via_api(bc, apiUrl, min_gap)
 	return res.Body
 end
 
+-- helpers for ResumeSave (persist ldeccache to disk so a later run can resume after a crash)
+local resume_cache_dir = "saveinstance_resume_cache"
+local function get_resume_cache_path(CacheDir)
+	return (CacheDir or resume_cache_dir) .. "/resume_" .. tostring(game.PlaceId) .. ".json"
+end
+local function load_resume_cache(CacheTable, CacheDir)
+	if not (readfile and isfile) then
+		return
+	end
+	local path = get_resume_cache_path(CacheDir)
+	local ok, data = pcall(readfile, path)
+	if ok and data and data ~= "" then
+		local ok2, decoded = pcall(function()
+			return service.HttpService:JSONDecode(data)
+		end)
+		if ok2 and type(decoded) == "table" then
+			for k, v in decoded do
+				if type(v) == "string" and v ~= "" then
+					CacheTable[k] = v
+				end
+			end
+			print("[saveinstance] ResumeSave: loaded " .. (next(decoded) and "checkpoint" or "empty") .. " from disk")
+		else
+			print("[saveinstance] ResumeSave: existing checkpoint is corrupt, starting fresh")
+		end
+	end
+end
+local function flush_resume_cache(CacheTable, CacheDir)
+	if not (writefile and makefolder) then
+		return
+	end
+	local dir = CacheDir or resume_cache_dir
+	if isfolder and not pcall(isfolder, dir) then
+		pcall(makefolder, dir)
+	end
+	local path = get_resume_cache_path(dir)
+	pcall(writefile, path, service.HttpService:JSONEncode(CacheTable))
+end
+
 local function RunDecompilePrepass(ldeccache, O, report)
 	local HttpRequest = get_http_request()
 	-- Prefer the executor's OWN decompiler if it has one (Volt now ships one) - no external API,
@@ -2493,11 +2548,17 @@ local function RunDecompilePrepass(ldeccache, O, report)
 						else
 							body = decompile_via_api(job.bc, apiUrl, rateGap)
 						end
-					if body and body ~= "" then
-						ldeccache[job.key] = (string.gsub(body, "\0", "\\0"))
-					end
-					done += 1
-					if report then
+						if body and body ~= "" then
+							ldeccache[job.key] = (string.gsub(body, "\0", "\\0"))
+						end
+						done += 1
+						if O.ResumeSave then
+							local interval = math.max(1, tonumber(O.ResumeCheckpointInterval) or 200)
+							if done % interval == 0 then
+								flush_resume_cache()
+							end
+						end
+						if report then
 						local elapsed = os.clock() - prepassStart
 						local eta
 						if done > 0 and elapsed > 0.5 then
@@ -2516,6 +2577,9 @@ local function RunDecompilePrepass(ldeccache, O, report)
 	dbg("[prepass] scripts:", total, "| decompiled OK:", _api_ok, "| failed:", _api_fail, "| in", string.format("%.1fs", os.clock() - prepassStart))
 	if _api_first_fail then
 		dbg("[prepass] first API failure:", _api_first_fail)
+	end
+	if O.ResumeSave then
+		flush_resume_cache()
 	end
 	return true
 end
@@ -2556,6 +2620,40 @@ local function report_executor_support(O)
 		warn("   - " .. m)
 	end
 	return missing
+end
+
+local function write_verify_report(O, save_ok, elapsed)
+	local lines = {
+		"SaveInstanceFetch save verification",
+		"place_id: " .. tostring(game.PlaceId),
+		"save_ok: " .. tostring(save_ok),
+		"elapsed: " .. string.format("%.2fs", elapsed or 0),
+		"",
+		"scripts:",
+		"- total encountered: " .. tostring(verify_stats.scripts_total),
+		"- decompiled ok: " .. tostring(verify_stats.scripts_decompiled),
+		"- failed/placeholder: " .. tostring(verify_stats.scripts_failed),
+		"",
+		"unions (PartOperation):",
+		"- total encountered: " .. tostring(verify_stats.unions_total),
+		"- mesh ok: " .. tostring(verify_stats.unions_mesh_ok),
+		"- mesh missing: " .. tostring(verify_stats.unions_mesh_missing),
+		"",
+		"meshparts:",
+		"- total encountered: " .. tostring(verify_stats.meshparts_total),
+		"- meshid present: " .. tostring(verify_stats.meshparts_data_ok),
+		"- meshid empty: " .. tostring(verify_stats.meshparts_data_missing),
+		"",
+		"instances_total: " .. tostring(verify_stats.instances_total),
+	}
+
+	if O.noscripts then
+		lines[#lines + 1] = ""
+		lines[#lines + 1] = "Note: noscripts=true — script counts reflect captured containers, not decompiled sources."
+	end
+
+	local wrote = writefile and pcall(writefile, "saveinstance-verify.txt", table.concat(lines, "\n"))
+	print("[saveinstance] Verify report " .. (wrote and "written to saveinstance-verify.txt" or "could not be written"))
 end
 
 local function write_capability_report(O, missing, save_ok, elapsed, save_err)
@@ -2948,8 +3046,16 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
 		-- * Detailed debug log written to saveinstance-debug.txt in the executor workspace (share it for diagnosis)
-		Debug = false,
-		CapabilityReport = false, -- write saveinstance-capabilities.txt with executor support and likely limitations
+			Debug = false,
+			CapabilityReport = false, -- write saveinstance-capabilities.txt with executor support and likely limitations
+			VerifySave = false,       -- write saveinstance-verify.txt comparing saved content to the live game (scripts decompiled, unions with mesh, MeshParts recovered)
+
+			-- * ResumeSave: persist the in-memory decompile cache (ldeccache) to disk periodically
+			-- so a later run can resume decompiling from where it left off if the game crashes mid-save.
+			-- Only the decompile phase is resumed; the XML serialization phase is NOT resumed.
+			ResumeSave = false,
+			ResumeCacheDir = "saveinstance_resume_cache",
+			ResumeCheckpointInterval = 200, -- flush cache to disk every N scripts (0 = only at the end)
 
 		-- * Map streaming: force-load a StreamingEnabled map before saving so the WHOLE map is captured (not just chunks near you)
 		SetStreaming = false,
@@ -3170,22 +3276,31 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local IgnoreNotArchivable = not OPTIONS.IgnoreNotArchivable
 	local IgnorePropertiesOfNotScriptsOnScriptsMode = OPTIONS.IgnorePropertiesOfNotScriptsOnScriptsMode
 
-	if OPTIONS.FullUnionTerrainSupport then
-		OPTIONS.SetStreaming = true
-		OPTIONS.IgnoreSpecialProperties = false
-		OPTIONS.TreatUnionsAsParts = false
-		if CustomOptions_valid.StreamingSettleTime == nil then
-			OPTIONS.StreamingSettleTime = math.max(tonumber(OPTIONS.StreamingSettleTime) or 5, 8)
+		if OPTIONS.FullUnionTerrainSupport then
+			OPTIONS.SetStreaming = true
+			OPTIONS.IgnoreSpecialProperties = false
+			OPTIONS.TreatUnionsAsParts = false
+			if CustomOptions_valid.StreamingSettleTime == nil then
+				OPTIONS.StreamingSettleTime = math.max(tonumber(OPTIONS.StreamingSettleTime) or 5, 8)
+			end
+			if CustomOptions_valid.CapabilityReport == nil then
+				OPTIONS.CapabilityReport = true
+			end
+			if CustomOptions_valid.VerifySave == nil then
+				OPTIONS.VerifySave = true
+			end
 		end
-		if CustomOptions_valid.CapabilityReport == nil then
-			OPTIONS.CapabilityReport = true
-		end
-	end
 
 		_api_ok, _api_fail, _api_first_fail, _api_warned = 0, 0, nil, false -- reset decompile counters/warn each run
 		asset_manifest_enabled = OPTIONS.AssetManifest == true
 		if asset_manifest_enabled then
 			table.clear(asset_manifest_set)
+		end
+		verify_stats_enabled = OPTIONS.VerifySave == true
+		if verify_stats_enabled then
+			for k in verify_stats do
+				verify_stats[k] = 0
+			end
 		end
 		if OPTIONS.Debug then -- start the debug log (written to saveinstance-debug.txt at the end)
 		debug_enabled = true
@@ -3228,10 +3343,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		RecoveredScripts = {}
 	end
 
-	if ScriptCache and not ldeccache then
-		ldeccache = {}
-		GLOBAL_ENV.scriptcache = ldeccache
-	end
+		if ScriptCache and not ldeccache then
+			ldeccache = {}
+			GLOBAL_ENV.scriptcache = ldeccache
+		end
+		if OPTIONS.ResumeSave and ldeccache then
+			resume_cache_dir = tostring(OPTIONS.ResumeCacheDir or "saveinstance_resume_cache")
+			load_resume_cache()
+		end
 
 	if ToSaveInstance == game then
 		OPTIONS.mode = "full"
@@ -3966,11 +4085,33 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				end
 			end
 
-			if not InstanceOverride then
-				InstanceOverride = InstancesOverrides[instance]
-			end
+				if not InstanceOverride then
+					InstanceOverride = InstancesOverrides[instance]
+				end
 
-			-- ? The reason we only save .Name (and few other props in save_specific) is because
+				-- VerifySave: count unions and MeshParts
+				if verify_stats_enabled then
+					verify_stats.instances_total += 1
+					if instance:IsA("PartOperation") then
+						verify_stats.unions_total += 1
+						local ok_md, md = pcall(gethiddenproperty, instance, "MeshData2")
+						if ok_md and md and md ~= "" then
+							verify_stats.unions_mesh_ok += 1
+						else
+							verify_stats.unions_mesh_missing += 1
+						end
+					elseif instance:IsA("MeshPart") then
+						verify_stats.meshparts_total += 1
+						local ok_mh, mh = pcall(function() return instance.MeshId end)
+						if ok_mh and mh and mh ~= "" then
+							verify_stats.meshparts_data_ok += 1
+						else
+							verify_stats.meshparts_data_missing += 1
+						end
+					end
+				end
+
+				-- ? The reason we only save .Name (and few other props in save_specific) is because
 			-- ? we can be sure this is a custom container (ex. NilInstancesFixes)
 			-- ? However, in case of NotCreatableFixes, the Instance might have Tags, Attributes etc. that can potentially be saved (even though it's a Folder)
 			if InstanceOverride and InstanceOverride.__SaveSpecific then
@@ -4229,8 +4370,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											then
 												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
 											else
-												value = ldecompile(instance)
-												if SaveBytecode then
+									value = ldecompile(instance)
+											-- VerifySave: count script decompile results
+											if verify_stats_enabled then
+												verify_stats.scripts_total += 1
+												local isPl = value and type(value) == "string" and not string_find(value, "-- [FilteringEnabled]") and not string_find(value, "-- Not found") and not string_find(value, "-- Ignored") and not string_find(value, "-- Server Script")
+												local looksLikeErr = isPl and (string_find(value, "error") or string_find(value, "failed") or string_find(value, "FAIL"))
+												if isPl and not looksLikeErr then
+													verify_stats.scripts_decompiled += 1
+												else
+													verify_stats.scripts_failed += 1
+												end
+											end
+											if SaveBytecode then
 													local output = SaveBytecode(instance)
 													if output then
 														value = output .. value
@@ -4916,9 +5068,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				))
 			end
 			if OPTIONS.CapabilityReport then
-				write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
-			end
-				if asset_manifest_enabled then
+					write_capability_report(OPTIONS, capability_missing, ok, elapsed, err)
+				end
+				if OPTIONS.VerifySave then
+					write_verify_report(OPTIONS, ok, elapsed)
+				end
+					if asset_manifest_enabled then
 					local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed), "assets:", }
 					local n = #lines
 					if next(asset_manifest_set) == nil then
