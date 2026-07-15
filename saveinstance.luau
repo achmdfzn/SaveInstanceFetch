@@ -946,27 +946,33 @@ XML_Descriptors = {
 				.. " 0 "
 		end)
 	end,
-			Content = function(raw)
-				local SourceType = raw.SourceType
-				return SourceType == Enum.ContentSourceType.None and "<null></null>"
-					or SourceType == Enum.ContentSourceType.Uri and "<uri>" .. XML_Descriptors.string(raw.Uri) .. "</uri>"
-					or SourceType == Enum.ContentSourceType.Object and "<Ref>" .. GetRef(raw.Object)
-					.. "</Ref>" -- TODO Not sure, run tests
-			end,
-			ContentId = function(raw)
-				-- On newer clients, Content-typed props (Image, Texture, SoundId, MeshContent, ...) may read as
-				-- a Content userdata instead of a string. Extract its URI so they still serialize.
-				if type(raw) ~= "string" then
-					local ok, uri = pcall(function()
-						return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
-					end)
-					raw = (ok and uri) or ""
-				end
-				return raw == "" and "<null></null>" or "<url>" .. XML_Descriptors.string(raw) .. "</url>", "Content" -- TODO Remove "Content" str once Roblox fully releases Content DataType
-			end,
-		CoordinateFrame = function(raw)
-			return "<CFrame>" .. XML_Descriptors.CFrame(raw) .. "</CFrame>"
-		end,
+	Content = function(raw)
+		-- On newer clients, Content-typed props may read as a Content userdata OR as a plain
+		-- string (rbxassetid://..., rbxasset://..., http://...). Handle both so we never crash
+		-- on "attempt to index a string value with 'SourceType'".
+		if type(raw) == "string" then
+			return raw == "" and "<null></null>" or "<uri>" .. XML_Descriptors.string(raw) .. "</uri>"
+		end
+		local SourceType = raw.SourceType
+		return SourceType == Enum.ContentSourceType.None and "<null></null>"
+			or SourceType == Enum.ContentSourceType.Uri and "<uri>" .. XML_Descriptors.string(raw.Uri) .. "</uri>"
+			or SourceType == Enum.ContentSourceType.Object and "<Ref>" .. GetRef(raw.Object)
+			.. "</Ref>" -- TODO Not sure, run tests
+	end,
+	ContentId = function(raw)
+		-- On newer clients, Content-typed props (Image, Texture, SoundId, MeshContent, ...) may read as
+		-- a Content userdata instead of a string. Extract its URI so they still serialize.
+		if type(raw) ~= "string" then
+			local ok, uri = pcall(function()
+				return (raw.SourceType == Enum.ContentSourceType.Uri) and raw.Uri or ""
+			end)
+			raw = (ok and uri) or ""
+		end
+		return raw == "" and "<null></null>" or "<url>" .. XML_Descriptors.string(raw) .. "</url>", "Content" -- TODO Remove "Content" str once Roblox fully releases Content DataType
+	end,
+	CoordinateFrame = function(raw)
+		return "<CFrame>" .. XML_Descriptors.CFrame(raw) .. "</CFrame>"
+	end,
 		-- DateTime = function(raw) return raw.UnixTimestampMillis end, -- ? Not sure
 	Faces = function(raw)
 		-- The text of this element is formatted as an integer between 0 and 63
