@@ -5616,14 +5616,49 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				write_verify_report(OPTIONS, ok, elapsed)
 			end
 			if asset_manifest_enabled then
-				local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed), "assets:", }
+				local lines = { "SaveInstanceFetch asset manifest", "place_id: " .. tostring(game.PlaceId), "elapsed: " .. string.format("%.2fs", elapsed) }
 				local n = #lines
 				if next(asset_manifest_set) == nil then
-					lines[n + 1] = "(none found)"
+					lines[n + 1] = ""
+					lines[n + 2] = "(none found)"
 				else
+					-- Build a summary by asset type (classified by property name + URI scheme).
+					local summary = { textures = 0, meshes = 0, sounds = 0, animations = 0, models = 0, scripts = 0, other = 0 }
 					for uri, meta in asset_manifest_set do
-						n += 1
-						lines[n] = uri .. "  --  " .. meta.Instance .. " [" .. meta.Property .. "]"
+						local prop = meta and meta.Property or ""
+						if string_find(prop, "Texture") or string_find(prop, "Image") or string_find(prop, "Color")
+							or string_find(prop, "Normal") or string_find(prop, "Shirt") or string_find(prop, "Pants")
+							or string_find(prop, "Decal") then
+							summary.textures += 1
+						elseif string_find(prop, "Mesh") then
+							summary.meshes += 1
+						elseif string_find(prop, "Sound") then
+							summary.sounds += 1
+						elseif string_find(prop, "Animation") then
+							summary.animations += 1
+						elseif string_find(prop, "Script") or string_find(prop, "Source") then
+							summary.scripts += 1
+						else
+							summary.other += 1
+						end
+					end
+					local total_assets = 0
+					for _, c in summary do total_assets += c end
+					lines[n + 1] = ""
+					lines[n + 2] = "=== Summary ==="
+					lines[n + 3] = "Textures:   " .. summary.textures
+					lines[n + 4] = "Meshes:     " .. summary.meshes
+					lines[n + 5] = "Sounds:     " .. summary.sounds
+					lines[n + 6] = "Animations: " .. summary.animations
+					lines[n + 7] = "Scripts:    " .. summary.scripts
+					lines[n + 8] = "Other:      " .. summary.other
+					lines[n + 9] = "Total:      " .. total_assets .. " assets"
+					lines[n + 10] = ""
+					lines[n + 11] = "=== Assets ==="
+					local m = n + 11
+					for uri, meta in asset_manifest_set do
+						m += 1
+						lines[m] = uri .. "  --  " .. meta.Instance .. " [" .. meta.Property .. "]"
 					end
 				end
 				local wrote = writefile and pcall(writefile, "saveinstance-assets.txt", table.concat(lines, "\n"))
