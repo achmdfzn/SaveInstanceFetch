@@ -31,6 +31,8 @@ local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmd
 
 Copy-paste snippet di bawah ini ke executor kamu. Ini adalah **preset default** yang paling sering dipakai — sudah include laporan capability, daftar aset, dan verifikasi hasil save.
 
+> 📄 Preset siap-pakai juga tersedia sebagai file: [`usage.luau`](usage.luau) — tinggal copy isinya.
+
 ```luau
 local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
