@@ -2555,7 +2555,7 @@ local function RunDecompilePrepass(ldeccache, O, report)
 						if O.ResumeSave then
 							local interval = math.max(1, tonumber(O.ResumeCheckpointInterval) or 200)
 							if done % interval == 0 then
-								flush_resume_cache()
+								flush_resume_cache(ldeccache, resume_cache_dir)
 							end
 						end
 						if report then
@@ -2579,7 +2579,7 @@ local function RunDecompilePrepass(ldeccache, O, report)
 		dbg("[prepass] first API failure:", _api_first_fail)
 	end
 	if O.ResumeSave then
-		flush_resume_cache()
+		flush_resume_cache(ldeccache, resume_cache_dir)
 	end
 	return true
 end
@@ -2985,11 +2985,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		IgnoreProperties = {},
 
 		-- * Pattern-based and tag-based filtering (kept separate from IgnoreList so they don't conflict with its instance/class matching)
-			IgnoreNamePatterns = {}, -- Array of Lua patterns/globs matched against instance.Name
-			IgnoreTags = {},         -- Array of CollectionService tag names; instances carrying ANY of these tags are skipped
-			SaveOnlyTags = {},       -- Array of CollectionService tag names; ONLY instances carrying at least ONE of these tags are saved (ignored when empty)
+		IgnoreNamePatterns = {}, -- Array of Lua patterns/globs matched against instance.Name
+		IgnoreTags = {},         -- Array of CollectionService tag names; instances carrying ANY of these tags are skipped
+		SaveOnlyTags = {},       -- Array of CollectionService tag names; ONLY instances carrying at least ONE of these tags are saved (ignored when empty)
 
-			IgnoreList = { "CoreGui", "CorePackages" },
+		IgnoreList = { "CoreGui", "CorePackages" },
 
 		ExtraInstances = {},
 		NilInstances = false,
@@ -3046,16 +3046,16 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
 		-- * Detailed debug log written to saveinstance-debug.txt in the executor workspace (share it for diagnosis)
-			Debug = false,
-			CapabilityReport = false, -- write saveinstance-capabilities.txt with executor support and likely limitations
-			VerifySave = false,       -- write saveinstance-verify.txt comparing saved content to the live game (scripts decompiled, unions with mesh, MeshParts recovered)
+		Debug = false,
+		CapabilityReport = false, -- write saveinstance-capabilities.txt with executor support and likely limitations
+		VerifySave = false,       -- write saveinstance-verify.txt comparing saved content to the live game (scripts decompiled, unions with mesh, MeshParts recovered)
 
-			-- * ResumeSave: persist the in-memory decompile cache (ldeccache) to disk periodically
-			-- so a later run can resume decompiling from where it left off if the game crashes mid-save.
-			-- Only the decompile phase is resumed; the XML serialization phase is NOT resumed.
-			ResumeSave = false,
-			ResumeCacheDir = "saveinstance_resume_cache",
-			ResumeCheckpointInterval = 200, -- flush cache to disk every N scripts (0 = only at the end)
+		-- * ResumeSave: persist the in-memory decompile cache (ldeccache) to disk periodically
+		-- so a later run can resume decompiling from where it left off if the game crashes mid-save.
+		-- Only the decompile phase is resumed; the XML serialization phase is NOT resumed.
+		ResumeSave = false,
+		ResumeCacheDir = "saveinstance_resume_cache",
+		ResumeCheckpointInterval = 200, -- flush cache to disk every N scripts (0 = only at the end)
 
 		-- * Map streaming: force-load a StreamingEnabled map before saving so the WHOLE map is captured (not just chunks near you)
 		SetStreaming = false,
@@ -3072,10 +3072,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		NeutralizeLighting = false,
 
 		-- * ExportObj: also write a world-space .obj of all MeshPart geometry (recovered via EditableMesh) next to the save, so PRIVATE meshes that show as grey boxes in Studio can be recovered/viewed in Blender. Pair with SetStreaming. Large on big maps.
-			ExportObj = false,
+		ExportObj = false,
 
-			-- * AssetManifest: collect every rbxassetid://, rbxasset://, and http:// URI referenced by Content/ContentId properties into a companion saveinstance-assets.txt list. Useful for recovering or cataloguing textures, sounds, meshes, decals, and animations alongside the save.
-			AssetManifest = false,
+		-- * AssetManifest: collect every rbxassetid://, rbxasset://, and http:// URI referenced by Content/ContentId properties into a companion saveinstance-assets.txt list. Useful for recovering or cataloguing textures, sounds, meshes, decals, and animations alongside the save.
+		AssetManifest = false,
 
 			-- * Decompilation prepass: parallel-decompile all client scripts via an external API before saving (big speedup on script-heavy games). RISKY: sends script bytecode to a third-party API.
 		DecompilePrepass = false,
@@ -3347,10 +3347,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			ldeccache = {}
 			GLOBAL_ENV.scriptcache = ldeccache
 		end
-		if OPTIONS.ResumeSave and ldeccache then
-			resume_cache_dir = tostring(OPTIONS.ResumeCacheDir or "saveinstance_resume_cache")
-			load_resume_cache()
-		end
+			if OPTIONS.ResumeSave and ldeccache then
+				resume_cache_dir = tostring(OPTIONS.ResumeCacheDir or "saveinstance_resume_cache")
+				load_resume_cache(ldeccache, resume_cache_dir)
+			end
 
 	if ToSaveInstance == game then
 		OPTIONS.mode = "full"

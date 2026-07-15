@@ -14,6 +14,10 @@ A smart SaveInstance tool that correctly saves any Roblox games the way they loo
 - **Cleaner saved scenes** - `NeutralizeLighting` can reset dark/foggy lighting before save
 - **Debuggable decompile flow** - `Debug`, `CapabilityReport`, `DecompilePrepass`, and `PrepassMaxScripts` expose diagnostics and safer API pacing
 - **Persistent decompile cache** - `PersistentCache` stores decompiled scripts on disk so repeat saves of the same game reuse them and skip the third-party API, cutting run time and data sent externally
+- **Asset manifest** - `AssetManifest` collects every `rbxassetid://`, `rbxasset://`, and `http://` URI into a companion list so you can recover all textures, sounds, meshes, decals, and animations
+- **Granular filtering** - `IgnoreNamePatterns`, `IgnoreTags`, and `SaveOnlyTags` let you skip or isolate instances by name pattern or `CollectionService` tag
+- **Save verification** - `VerifySave` writes a report counting scripts decompiled, unions with mesh data, and MeshParts recovered so you know how complete the save was
+- **Resume decompile** - `ResumeSave` checkpoints the decompile cache to disk periodically so if the game crashes mid-save, the next run resumes from where it left off
 
 ## Installation
 
@@ -91,6 +95,35 @@ Structure-only save when decompile is failing or too slow:
 local Options = {
     noscripts = true,
     CapabilityReport = true,
+}
+```
+
+Capture everything with verification and asset catalog:
+
+```luau
+local Options = {
+    FullUnionTerrainSupport = true,
+    AssetManifest = true,
+    VerifySave = true,
+    ExportObj = true,
+}
+```
+
+Resume a crashed save (only the decompile phase resumes):
+
+```luau
+local Options = {
+    ResumeSave = true,
+}
+```
+
+Filter by name pattern or CollectionService tag:
+
+```luau
+local Options = {
+    IgnoreNamePatterns = {"^Camera$", "ZoneVisual$"},
+    IgnoreTags = {"EditorOnly", "ZoneBorder"},
+    -- SaveOnlyTags = {"SaveMe"}, -- uncomment to save ONLY tagged instances
 }
 ```
 
