@@ -2668,9 +2668,11 @@ local function download_assets(manifest_set, O, report)
 	local use_subfolder = false
 	if makefolder then
 		pcall(makefolder, dir)
-		-- Verify the folder actually exists now.
+		-- Verify the folder actually exists now (capture BOTH pcall return values — pcall returns
+		-- (true, result); using it as a single expression always yields `true` and hides the real result).
 		if isfolder then
-			use_subfolder = pcall(isfolder, dir) and true or false
+			local isf_ok, isf_result = pcall(isfolder, dir)
+			use_subfolder = isf_ok and isf_result and true or false
 		else
 			use_subfolder = true -- assume it worked; we'll detect failure on first write
 		end
@@ -2744,36 +2746,80 @@ local function download_assets(manifest_set, O, report)
 	local first_write_err = nil
 	local subfolder_failed = false
 
+	-- Build a file path for an asset. Tries subfolder first; falls back to flat filename
+	-- (and backslash separator on Windows executors that reject "/") if needed.
+	local function make_path(id, ext)
+		if use_subfolder and not subfolder_failed then
+			return dir .. "/" .. id .. "." .. ext
+		end
+		return dir .. "_" .. id .. "." .. ext
+	end
+
+	-- Write a file with fallback: try the given path, then backslash variant, then flat name.
+	local function safe_write(id, ext, body)
+		local path = make_path(id, ext)
+		local w_ok, w_err = pcall(writefile, path, body)
+		if w_ok then
+			return true
+		end
+		-- If subfolder write failed, switch to flat filenames for all remaining downloads.
+		if use_subfolder and not subfolder_failed then
+			subfolder_failed = true
+			first_write_err = tostring(w_err)
+			path = make_path(id, ext) -- now returns flat name
+			w_ok, w_err = pcall(writefile, path, body)
+			if w_ok then
+				return true
+			end
+		end
+		-- Last resort: try backslash separator (some Windows executors reject "/").
+		if path:find("/", 1, true) then
+			local bs_path = path:gsub("/", "\\")
+			w_ok, w_err = pcall(writefile, bs_path, body)
+			if w_ok then
+				return true
+			end
+		end
+		first_write_err = first_write_err or tostring(w_err)
+		return false
+	end
+
+	-- Download a single asset with retry on transient failure (429/500/timeout).
 	local function download_one(item)
 		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. item.id
-		local res_ok, res = pcall(HttpRequest, {
-			Url = url,
-			Method = "GET",
-		})
-		if not (res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "") then
+		local body = nil
+		for attempt = 1, 2 do -- 1 original + 1 retry
+			local res_ok, res = pcall(HttpRequest, {
+				Url = url,
+				Method = "GET",
+				Timeout = 15, -- seconds; prevents infinite hang on CDN stall
+			})
+			if res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "" then
+				body = res.Body
+				break
+			end
+			-- Only retry on transient errors (429/5xx/timeout); don't retry 404 etc.
+			local code = res and type(res) == "table" and res.StatusCode or 0
+			if code ~= 429 and code < 500 and code ~= 0 then
+				break -- permanent failure, no retry
+			end
+			if attempt < 2 then
+				task.wait(1) -- brief backoff before retry
+			end
+		end
+		if not body then
 			fail_count += 1
 			return
 		end
 		-- Detect extension from magic bytes, fall back to property hint, then .bin.
-		local ext = detect_ext(res.Body)
+		local ext = detect_ext(body)
 		if ext == "bin" then
 			ext = guess_ext_from_property(item.property) or "bin"
 		end
-		-- Try subfolder path first; on failure fall back to flat filename in workspace root.
-		local path = use_subfolder and (dir .. "/" .. item.id .. "." .. ext) or (dir .. "_" .. item.id .. "." .. ext)
-		local w_ok, w_err = pcall(writefile, path, res.Body)
-		if not w_ok and use_subfolder and not subfolder_failed then
-			-- writefile into subfolder failed — switch to flat filenames for all remaining downloads.
-			subfolder_failed = true
-			first_write_err = tostring(w_err)
-			path = dir .. "_" .. item.id .. "." .. ext
-			w_ok, w_err = pcall(writefile, path, res.Body)
-		end
-		if w_ok then
+		if safe_write(item.id, ext, body) then
 			ok_count += 1
 		else
 			fail_count += 1
-			first_write_err = first_write_err or tostring(w_err)
 		end
 	end
 
@@ -2796,9 +2842,17 @@ local function download_assets(manifest_set, O, report)
 	for _ = 1, math.min(concurrency, total) do
 		workers[#workers + 1] = task.spawn(worker)
 	end
-	-- Wait for all workers to finish (poll until every download resolves).
+	-- Wait for all workers to finish, but cap the wait so a stalled CDN or crashed worker
+	-- pool can't hang the save forever (15s grace per download, minimum 60s).
+	local max_wait = math.max(60, total * 15)
+	local waited = 0
 	while done_count < total do
-		task.wait()
+		task.wait(0.5)
+		waited += 0.5
+		if waited >= max_wait then
+			warn(string.format("[saveinstance] DownloadAssets: timed out after %.0fs (%d/%d done)", waited, done_count, total))
+			break
+		end
 	end
 
 	if subfolder_failed then
