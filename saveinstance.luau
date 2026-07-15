@@ -1313,6 +1313,9 @@ do
 					local Type = typeof(val)
 
 					local Descriptor = Binary_Descriptors[Type]
+					if not Descriptor then
+						continue -- skip unsupported attribute types instead of crashing
+					end
 					local attr_size
 
 					attrs_formatted[attr], attr_size = Descriptor(val)
@@ -2549,17 +2552,17 @@ local function RunDecompilePrepass(ldeccache, O, report)
 							end
 						end
 						if report then
-						local elapsed = os.clock() - prepassStart
-						local eta
-						if done > 0 and elapsed > 0.5 then
-							eta = (total - done) * (elapsed / done)
+							local elapsed = os.clock() - prepassStart
+							local eta
+							if done > 0 and elapsed > 0.5 then
+								eta = (total - done) * (elapsed / done)
+							end
+							pcall(report, done, total, eta)
 						end
-						report(done, total, eta)
 					end
-				end
+				end)
+				active -= 1
 			end)
-			active -= 1
-		end)
 	end
 	while active > 0 do
 		task.wait(0.1)
@@ -2861,6 +2864,9 @@ local function download_assets(manifest_set, O, report)
 		end
 		-- Read face indices (after all vertex data).
 		local fpos = pos + num_verts * stride
+		if fpos + num_faces * face_bpf - 1 > #body then
+			return nil, "binary mesh: face data exceeds file size"
+		end
 		for _ = 1, num_faces do
 			local f1, f2, f3
 			if is16bit == 1 then
@@ -2957,6 +2963,7 @@ local function download_assets(manifest_set, O, report)
 		end
 		-- Headers may be a table keyed by string or mixed-case; try common variants.
 		local Headers = res.Headers or {}
+		if type(Headers) ~= "table" then return nil end
 		local loc = Headers.location or Headers.Location or Headers["Location"]
 			or Headers["location"] or (type(Headers) == "table" and rawget(Headers, "location"))
 		-- Some executors return header names in mixed case inside a flat table.
@@ -3059,10 +3066,10 @@ local function download_assets(manifest_set, O, report)
 			local i = next_index
 			if i > total then return end
 			next_index += 1
-			download_one(ids[i])
+			pcall(download_one, ids[i]) -- pcall so a throw doesn't kill the worker and hang the pool
 			done_count += 1
 			if report and done_count % 50 == 0 then
-				report(done_count, total)
+				pcall(report, done_count, total)
 			end
 		end
 	end
@@ -3725,7 +3732,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			FilePath = "string",
 			PrepassApiUrl = "string",
 			ResumeCacheDir = "string",
-			CacheDir = "string",
 			DownloadAssetsDir = "string",
 			-- tables
 			IgnoreList = "table",
