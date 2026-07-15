@@ -3197,6 +3197,86 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
+	do -- * Validate user-provided option types early so typos don't explode mid-save
+		local option_type_checks = {
+			-- booleans
+			AssetManifest = "boolean",
+			VerifySave = "boolean",
+			ResumeSave = "boolean",
+			Debug = "boolean",
+			CapabilityReport = "boolean",
+			SetStreaming = "boolean",
+			NeutralizeLighting = "boolean",
+			ExportObj = "boolean",
+			DecompilePrepass = "boolean",
+			noscripts = "boolean",
+			FullUnionTerrainSupport = "boolean",
+			IgnoreSpecialProperties = "boolean",
+			TreatUnionsAsParts = "boolean",
+			UseUGCValidationService = "boolean",
+			ReadMe = "boolean",
+			IsolateLocalPlayer = "boolean",
+			IsolateLocalPlayerCharacter = "boolean",
+			IsolateStarterPlayer = "boolean",
+			IsolatePlayers = "boolean",
+			SaveNotCreatable = "boolean",
+			IgnoreDefaultProperties = "boolean",
+			IgnoreNotArchivable = "boolean",
+			SharedStringOverwrite = "boolean",
+			AlternativeWritefile = "boolean",
+			SafeMode = "boolean",
+			IgnoreSharedStrings = "boolean",
+			DecompileJobless = "boolean",
+			scriptcache = "boolean",
+			-- numbers
+			timeout = "number",
+			SaveCacheInterval = "number",
+			PreloadAsync = "number",
+			PrepassConcurrency = "number",
+			PrepassRateGap = "number",
+			PrepassMaxScripts = "number",
+			StreamingAreaSize = "number",
+			StreamingRadius = "number",
+			StreamingTimeout = "number",
+			StreamingSlices = "number",
+			StreamingMaxTime = "number",
+			StreamingChunkWait = "number",
+			StreamingSettleTime = "number",
+			ResumeCheckpointInterval = "number",
+			-- strings
+			mode = "string",
+			FilePath = "string",
+			PrepassApiUrl = "string",
+			ResumeCacheDir = "string",
+			CacheDir = "string",
+			-- tables
+			IgnoreList = "table",
+			ExtraInstances = "table",
+			IgnoreProperties = "table",
+			IgnoreNamePatterns = "table",
+			IgnoreTags = "table",
+			SaveOnlyTags = "table",
+			NilInstancesFixes = "table",
+			NotCreatableFixes = "table",
+			DecompileIgnore = "table",
+		}
+
+		for option_name in CustomOptions_valid do
+			local expected = option_type_checks[option_name]
+			if expected then
+				local actual = typeof(OPTIONS[option_name])
+				if actual ~= expected then
+					warn(string.format(
+						"[saveinstance] Invalid option type: %s expected %s, got %s",
+						option_name,
+						expected,
+						actual
+					))
+				end
+			end
+		end
+	end
+
 	if OPTIONS.IgnoreDefaultPlayerScripts then
 		-- TODO This is a bad workaround, find a better automatic way
 		-- TODO Look into https://robloxapi.github.io/ref/class/LuaSourceContainer.html#member-isPlayerScript
