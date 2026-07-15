@@ -2646,6 +2646,98 @@ local function write_verify_report(O, save_ok, elapsed)
 	print("[saveinstance] Verify report " .. (wrote and "written to saveinstance-verify.txt" or "could not be written"))
 end
 
+-- DownloadAssets: fetch every rbxassetid:// asset from the manifest into a folder.
+-- Needs an HTTP request function + writefile/makefolder. Skips rbxasset:// (built-in, not downloadable).
+local function download_assets(manifest_set, O, report)
+	local HttpRequest = get_http_request()
+	if not HttpRequest then
+		print("[saveinstance] DownloadAssets skipped: no HTTP request function")
+		return 0, 0, "no http"
+	end
+	if not writefile then
+		print("[saveinstance] DownloadAssets skipped: no writefile")
+		return 0, 0, "no writefile"
+	end
+
+	local dir = tostring(O.DownloadAssetsDir or "saveinstance_assets")
+	if makefolder then
+		pcall(makefolder, dir)
+	end
+
+	-- Collect unique rbxassetid:// IDs (skip rbxasset://, http://, https:// — only Roblox CDN assets).
+	local ids, seen = {}, {}
+	for uri in manifest_set do
+		local id = string.match(uri, "rbxassetid://(%d+)")
+		if id and not seen[id] then
+			seen[id] = true
+			ids[#ids + 1] = id
+		end
+	end
+
+	local total = #ids
+	if total == 0 then
+		print("[saveinstance] DownloadAssets: no rbxassetid:// assets to download")
+		return 0, 0, "none"
+	end
+
+	local max = tonumber(O.DownloadAssetsMax) or 0
+	if max > 0 and total > max then
+		total = max
+	end
+	local concurrency = math.max(1, tonumber(O.DownloadAssetsConcurrency) or 8)
+
+	local ok_count, fail_count = 0, 0
+	local next_index = 1
+
+	local function download_one(id)
+		-- Try the standard Roblox asset delivery endpoint. We don't know the type, so save as .bin.
+		-- The user can rename/re-import later. The asset ID is preserved in the filename.
+		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. id
+		local res_ok, res = pcall(HttpRequest, {
+			Url = url,
+			Method = "GET",
+		})
+		if res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "" then
+			local path = dir .. "/" .. id .. ".bin"
+			local w_ok = pcall(writefile, path, res.Body)
+			if w_ok then
+				ok_count += 1
+			else
+				fail_count += 1
+			end
+		else
+			fail_count += 1
+		end
+	end
+
+	-- Simple worker pool: spawn `concurrency` workers, each pulls from the shared index.
+	local done_count = 0
+	local function worker()
+		while true do
+			local i = next_index
+			if i > total then return end
+			next_index += 1
+			download_one(ids[i])
+			done_count += 1
+			if report and done_count % 50 == 0 then
+				report(done_count, total)
+			end
+		end
+	end
+
+	local workers = {}
+	for _ = 1, math.min(concurrency, total) do
+		workers[#workers + 1] = task.spawn(worker)
+	end
+	-- Wait for all workers to finish (poll until every download resolves).
+	while done_count < total do
+		task.wait()
+	end
+
+	print(string.format("[saveinstance] DownloadAssets: %d ok, %d failed (out of %d) -> %s/", ok_count, fail_count, total, dir))
+	return ok_count, fail_count
+end
+
 local function write_capability_report(O, missing, save_ok, elapsed, save_err)
 	local lines = {
 		"SaveInstanceFetch capability report",
@@ -3067,6 +3159,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		-- * AssetManifest: collect every rbxassetid://, rbxasset://, and http:// URI referenced by Content/ContentId properties into a companion saveinstance-assets.txt list. Useful for recovering or cataloguing textures, sounds, meshes, decals, and animations alongside the save.
 		AssetManifest = false,
 
+		-- * DownloadAssets: download every rbxassetid:// asset from the manifest into an assets/ folder in the executor workspace, so you can drag-drop them into Studio. Needs AssetManifest=true and an HTTP request function. Slow on games with thousands of assets.
+		DownloadAssets = false,
+		DownloadAssetsDir = "saveinstance_assets",
+		DownloadAssetsConcurrency = 8, -- parallel downloads kept in flight
+		DownloadAssetsMax = 0, -- 0 = no cap; set a number to stop after N downloads
+
 			-- * Decompilation prepass: parallel-decompile all client scripts via an external API before saving (big speedup on script-heavy games). RISKY: sends script bytecode to a third-party API.
 		DecompilePrepass = false,
 		PrepassConcurrency = 24, -- parallel decompile requests kept in flight
@@ -3207,6 +3305,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		local option_type_checks = {
 			-- booleans
 			AssetManifest = "boolean",
+			DownloadAssets = "boolean",
 			VerifySave = "boolean",
 			ResumeSave = "boolean",
 			Debug = "boolean",
@@ -3249,12 +3348,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			StreamingChunkWait = "number",
 			StreamingSettleTime = "number",
 			ResumeCheckpointInterval = "number",
+			DownloadAssetsConcurrency = "number",
+			DownloadAssetsMax = "number",
 			-- strings
 			mode = "string",
 			FilePath = "string",
 			PrepassApiUrl = "string",
 			ResumeCacheDir = "string",
 			CacheDir = "string",
+			DownloadAssetsDir = "string",
 			-- tables
 			IgnoreList = "table",
 			ExtraInstances = "table",
@@ -5156,6 +5258,23 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				end
 				local wrote = writefile and pcall(writefile, "saveinstance-assets.txt", table.concat(lines, "\n"))
 				print("[saveinstance] Asset manifest " .. (wrote and "written to saveinstance-assets.txt" or "could not be written"))
+				if OPTIONS.DownloadAssets then
+					if StatusText then
+						StatusText.Text = "Downloading assets..."
+					end
+					local dlOk, dlFail = download_assets(asset_manifest_set, OPTIONS, function(done, tot)
+						if StatusText then
+							StatusText.Text = string.format("Downloading assets: %d / %d", done, tot)
+						end
+						if ProgressFill and tot > 0 then
+							ProgressFill.Size = UDim2.new(done / tot, 0, 1, 0)
+						end
+					end)
+					if ProgressFill then
+						ProgressFill.Size = UDim2.new(0, 0, 1, 0)
+					end
+					dbg("[assets] downloaded ok:", dlOk, "failed:", dlFail)
+				end
 			end
 			if debug_enabled then -- finish + write the debug log
 				 dbg("[save] ok=", ok, "| size=", get_size_format(), "| time=", string.format("%.2fs", elapsed))
