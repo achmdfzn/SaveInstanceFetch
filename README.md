@@ -74,12 +74,15 @@ Files are saved with the correct extension based on magic bytes detection:
 | `.png` `.jpg` `.bmp` | Yes | Drag into viewport → creates Decal |
 | `.ogg` | Yes | Drag into viewport → creates Sound |
 | `.rbxm` | Yes | Drag into viewport → inserts model |
-| `.mesh` | No | Roblox internal format — see below |
+| `.obj` | Yes | Drag into viewport → imports as MeshPart (converted from `.mesh`) |
+| `.mesh` | No | Conversion failed — Roblox internal format, kept as backup |
 | `.bin` | No | Unknown type — rename to inspect |
 
-**About `.mesh` files:** Roblox Studio does not support importing `.mesh` files directly — it's Roblox's internal binary mesh format, not a standard 3D format. The downloaded `.mesh` files serve as **offline backups** of the asset. When you open the `.rbxlx` save in Studio with internet, MeshParts with `MeshId = rbxassetid://ID` load from the Roblox CDN automatically — the downloaded files aren't needed for that.
+**Mesh → OBJ conversion:** By default (`DownloadAssetsConvertMesh = true`), downloaded `.mesh` files are automatically converted to `.obj` — a format Studio and Blender can import. The converter supports all Roblox mesh format versions (v1 text, v2/v3 text, v4/v5 binary). If conversion fails, the raw `.mesh` is kept as a fallback.
 
-For **offline or private mesh recovery** (meshes Studio can't re-download), use `ExportObj = true` instead — it bakes all MeshPart geometry to `.obj` (which Studio CAN import) via `AssetService:CreateEditableMeshAsync`.
+**About `.mesh` files:** Roblox Studio cannot import `.mesh` files directly — it's Roblox's internal binary mesh format. When you open the `.rbxlx` save in Studio with internet, MeshParts with `MeshId = rbxassetid://ID` load from the Roblox CDN automatically.
+
+For **private mesh recovery** (meshes Studio can't re-download from CDN), use `ExportObj = true` — it bakes all MeshPart geometry to `.obj` via `AssetService:CreateEditableMeshAsync`, even for meshes that can't be downloaded.
 
 ### Quick Switch
 
@@ -105,7 +108,7 @@ Full options list: [`docs/option.md`](docs/option.md).
 - **Private mesh recovery** — `ExportObj` bakes MeshPart geometry into world-space `.obj`
 - **Persistent decompile cache** — `PersistentCache` stores decompile results on disk, skipping third-party API on subsequent runs
 - **Asset manifest** — `AssetManifest` lists all asset URIs (`rbxassetid://`, `rbxasset://`, `http://`)
-- **Asset downloader** — `DownloadAssets` fetches all `rbxassetid://` assets to a workspace folder, detects file type from magic bytes (PNG/OGG/mesh/rbxm), follows CDN redirects — ready to drag-drop into Studio
+- **Asset downloader** — `DownloadAssets` fetches all `rbxassetid://` assets to a workspace folder, detects file type from magic bytes (PNG/OGG/mesh/rbxm), follows CDN redirects, and converts `.mesh` to `.obj` (Studio-importable) — ready to drag-drop into Studio
 - **Save verification** — `VerifySave` counts recovered scripts/unions/meshparts
 - **Granular filtering** — `IgnoreNamePatterns`, `IgnoreTags`, `SaveOnlyTags`
 - **Resume decompile** — `ResumeSave` checkpoints to disk, resumes from the last point on crash
@@ -130,6 +133,7 @@ loadstring(game:HttpGet(
 
 | Date | Change |
 |------|--------|
+| 2026-07-16 | Convert `.mesh` to `.obj` during DownloadAssets (Studio-importable); supports v1–v5 mesh formats |
 | 2026-07-15 | Fix DownloadAssets: follow 302 redirect to CDN, HTTP failure diagnostics |
 | 2026-07-15 | Harden DownloadAssets: fix isfolder bug, retry transient errors, deadlock protection, backslash fallback |
 | 2026-07-15 | Detect file type from magic bytes, save with correct extension (png/ogg/mesh/rbxm) |
