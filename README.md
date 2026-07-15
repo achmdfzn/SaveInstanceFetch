@@ -44,6 +44,7 @@ Tambahkan ke `Options` sesuai kebutuhan:
 | Skip instance by pola nama | `IgnoreNamePatterns = {"^Camera$"}` |
 | Skip instance by tag CollectionService | `IgnoreTags = {"EditorOnly"}` |
 | Save HANYA instance bertag tertentu | `SaveOnlyTags = {"SaveMe"}` |
+| Download semua asset ke folder workspace | `AssetManifest = true, DownloadAssets = true` |
 | Reset cache decompile (kalau basi) | `PrepassOptions.ClearCache = true` |
 
 Daftar opsi lengkap: [`docs/option.md`](docs/option.md).
@@ -57,6 +58,7 @@ Daftar opsi lengkap: [`docs/option.md`](docs/option.md).
 - **Private mesh recovery** — `ExportObj` bake geometry MeshPart ke `.obj` world-space
 - **Persistent decompile cache** — `PersistentCache` simpan hasil decompile di disk, skip API pihak ketiga di run berikutnya
 - **Asset manifest & verifikasi** — `AssetManifest` daftar semua URI aset, `VerifySave` hitung script/union/meshpart yang ter-recover
+- **Asset downloader** — `DownloadAssets` otomatis download semua `rbxassetid://` dari manifest ke folder workspace, siap drag-drop ke Studio
 - **Granular filtering** — `IgnoreNamePatterns`, `IgnoreTags`, `SaveOnlyTags`
 - **Resume decompile** — `ResumeSave` checkpoint ke disk, lanjut dari titik terakhir kalau crash
 
