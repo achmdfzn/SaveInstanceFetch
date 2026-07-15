@@ -29,15 +29,15 @@ local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmd
 
 ## Usage
 
-### A) Legacy Prepass (default)
-
-Wrapper `prepass.luau` mengelola decompile sendiri via API, cache persisten ke disk, dan hook `decompile`. Paling aman kalau mau cache script tetap tersedia antar-run.
+Copy-paste snippet di bawah ini ke executor kamu. Ini adalah **preset default** yang paling sering dipakai — sudah include laporan capability, daftar aset, dan verifikasi hasil save.
 
 ```luau
 local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
 local Options = {
-    CapabilityReport = true, -- writes saveinstance-capabilities.txt for executor diagnostics
+    CapabilityReport = true,      -- laporan capability executor (saveinstance-capabilities.txt)
+    AssetManifest = true,         -- daftar semua asset ID yang dipakai game (saveinstance-assets.txt)
+    VerifySave = true,            -- statistik hasil save: script, union, meshpart (saveinstance-verify.txt)
     -- Full list @ https://luau.github.io/UniversalSynSaveInstance/api/SynSaveInstance
 }
 
@@ -47,12 +47,12 @@ local PrepassOptions = {
     RequestTimeout = 20,
     ApiUrl = "https://api.lua.expert/decompile",
     Verbose = true,
-    SkipPrepass = false,        -- skip cache warm-up, go straight to saveinstance
-    SkipSaveInstance = false,   -- run only the prepass, don't call saveinstance
+    SkipPrepass = false,          -- true = langsung save tanpa cache warm-up
+    SkipSaveInstance = false,     -- true = hanya decompile, tidak save
     UseSaveInstancePrepass = false,
-    PersistentCache = true,     -- reuse decompiled scripts from disk across runs
+    PersistentCache = true,       -- cache decompile ke disk, skip API di run berikutnya
     CacheDir = "saveinstance_decompile_cache",
-    ClearCache = false,         -- wipe the cache before this run to force a fresh decompile
+    ClearCache = false,           -- true = hapus cache lama, decompile ulang semua
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
     ScriptName = "saveinstance",
 }
@@ -60,49 +60,19 @@ local PrepassOptions = {
 prepass(Options, PrepassOptions)
 ```
 
-### B) Built-in DecompilePrepass
+### Alternatif cepat
 
-Gunakan decompile parallel bawaan `saveinstance.luau` — tanpa hook tambahan. Cukup aktifkan via `UseSaveInstancePrepass = true`.
+Ganti atau tambahkan key di `Options` / `PrepassOptions` sesuai kebutuhan:
 
-```luau
-local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
+| Yang mau dilakukan | Tambahkan ini |
+|-------------------|---------------|
+| Ganti ke built-in decompile parallel (tanpa hook) | `PrepassOptions.UseSaveInstancePrepass = true` |
+| Resume decompile kalau crash tengah jalan | `Options.ResumeSave = true` |
+| Export geometry MeshPart private ke `.obj` (Blender) | `Options.ExportObj = true` + `Options.SetStreaming = true` |
+| Full union + terrain untuk map StreamingEnabled | `Options.FullUnionTerrainSupport = true` |
+| Skip decompile (hanya struktur) | `Options.noscripts = true` |
 
-local Options = {
-    CapabilityReport = true,
-}
-
-local PrepassOptions = {
-    UseSaveInstancePrepass = true,
-    -- semua param decompile (MaxInFlight, RequestsPerMinute, ApiUrl) otomatis diteruskan ke saveinstance
-}
-
-prepass(Options, PrepassOptions)
-```
-
-### C) Verify + AssetManifest
-
-Untuk mendapatkan laporan verifikasi dan daftar aset yang tercapture:
-
-```luau
-local Options = {
-    FullUnionTerrainSupport = true,
-    AssetManifest = true,      -- buat saveinstance-assets.txt (semua rbxassetid://, rbxasset://, http://)
-    VerifySave = true,         -- buat saveinstance-verify.txt (statistik script, union, meshpart)
-    CapabilityReport = true,
-}
-```
-
-### D) Resume setelah crash
-
-Kalau game crash di tengah save, `ResumeSave` menyimpan checkpoint decompile cache ke disk supaya run berikutnya lanjut dari situ:
-
-```luau
-local Options = {
-    DecompilePrepass = true,   -- atau UseSaveInstancePrepass = true lewat prepass
-    ResumeSave = true,
-    ResumeCheckpointInterval = 200,
-}
-```
+> 💡 Semua opsi `Options` bisa digabung dalam satu table. Contoh lengkap ada di bagian **Recommended Presets** di bawah.
 
 
 ## Recommended Presets
