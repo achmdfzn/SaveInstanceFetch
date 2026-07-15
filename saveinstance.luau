@@ -2719,6 +2719,165 @@ local function download_assets(manifest_set, O, report)
 		return nil
 	end
 
+	-- Read a little-endian IEEE 754 float from a string at byte position `pos`.
+	-- Returns (float_value, next_pos). Used for parsing binary mesh formats (v4/v5).
+	local function read_f32_le(s, pos)
+		local b1, b2, b3, b4 = string.byte(s, pos, pos + 3)
+		if not b4 then return 0, pos + 4 end
+		local sign = b4 >= 128 and -1 or 1
+		local exp = (b4 % 128) * 2 + math.floor(b3 / 128)
+		local frac = (b3 % 128) * 65536 + b2 * 256 + b1
+		if exp == 0 then
+			if frac == 0 then return 0.0, pos + 4 end
+			return sign * (frac / 8388608) * 2^-126, pos + 4
+		end
+		if exp == 255 then return 0.0, pos + 4 end -- NaN/Inf -> 0
+		return sign * (1 + frac / 8388608) * 2^(exp - 127), pos + 4
+	end
+
+	-- Read a little-endian uint32 from a string at byte position `pos`.
+	local function read_u32_le(s, pos)
+		local b1, b2, b3, b4 = string.byte(s, pos, pos + 3)
+		if not b4 then return 0, pos + 4 end
+		return b1 + b2 * 256 + b3 * 65536 + b4 * 16777216, pos + 4
+	end
+
+	-- Read a little-endian uint16 from a string at byte position `pos`.
+	local function read_u16_le(s, pos)
+		local b1, b2 = string.byte(s, pos, pos + 1)
+		if not b2 then return 0, pos + 2 end
+		return b1 + b2 * 256, pos + 2
+	end
+
+	-- Convert a Roblox .mesh file body to a Studio-importable .obj string.
+	-- Supports v1 (text, bracket format), v2/v3 (text, space-separated), and v4/v5 (binary).
+	-- Returns (obj_string) on success, or (nil, error_reason) on failure.
+	local function mesh_to_obj(body)
+		if not body or body == "" then return nil, "empty body" end
+
+		local major = tonumber(body:match("^version (%d+)"))
+		if not major then return nil, "not a Roblox mesh (no version header)" end
+
+		-- Text-based formats (v1, v2, v3): parse line by line.
+		if major <= 3 then
+			-- Split into lines (skip the first "version N.M" line).
+			local lines = {}
+			for line in body:gmatch("[^\n]+") do
+				lines[#lines + 1] = line
+			end
+
+			if major == 1 then
+				-- v1: "num_faces N" then 3N vertex lines: "[px py pz] [nx ny nz] [u v]"
+				local num_faces = tonumber(lines[2] and lines[2]:match("num_faces%s+(%d+)"))
+				if not num_faces then return nil, "v1: no num_faces" end
+				local out = { "# Roblox mesh v1 converted to OBJ\n" }
+				local vcount = 0
+				-- Lines 3..3+3*num_faces-1 are vertex data. Take the first bracket group = position.
+				for i = 3, #lines do
+					local pos_str = lines[i]:match("%[([^%]]+)%]")
+					if pos_str then
+						local x, y, z = pos_str:match("^(%S+)%s+(%S+)%s+(%S+)")
+						if x then
+							vcount += 1
+							out[#out + 1] = "v " .. x .. " " .. y .. " " .. z .. "\n"
+						end
+					end
+				end
+				-- v1 is an implicit triangle list: every 3 consecutive vertices form a face.
+				for i = 1, vcount, 3 do
+					if i + 2 <= vcount then
+						out[#out + 1] = string.format("f %d %d %d\n", i, i + 1, i + 2)
+					end
+				end
+				return table.concat(out)
+			end
+
+			-- v2/v3: "num_verts N", "num_faces M", then N vertex lines, then M face lines.
+			local num_verts = tonumber(lines[2] and lines[2]:match("num_verts%s+(%d+)"))
+			local num_faces = tonumber(lines[3] and lines[3]:match("num_faces%s+(%d+)"))
+			if not num_verts or not num_faces then return nil, "v2/v3: missing counts" end
+
+			local out = { "# Roblox mesh v" .. major .. " converted to OBJ\n" }
+			-- Vertex lines start at line 4. First 3 numbers = position.
+			for i = 4, 3 + num_verts do
+				local line = lines[i]
+				if line then
+					line = line:gsub("[%[%]]", "") -- strip brackets if present
+					local x, y, z = line:match("^(%S+)%s+(%S+)%s+(%S+)")
+					if x then
+						out[#out + 1] = "v " .. x .. " " .. y .. " " .. z .. "\n"
+					end
+				end
+			end
+			-- Face lines start after vertices. Format: "f1 f2 f3" (0-indexed).
+			for i = 4 + num_verts, 3 + num_verts + num_faces do
+				local line = lines[i]
+				if line then
+					line = line:gsub("[%[%]]", "")
+					local f1, f2, f3 = line:match("^(%S+)%s+(%S+)%s+(%S+)")
+					if f1 then
+						out[#out + 1] = string.format("f %d %d %d\n",
+							tonumber(f1) + 1, tonumber(f2) + 1, tonumber(f3) + 1)
+					end
+				end
+			end
+			return table.concat(out)
+		end
+
+		-- Binary formats (v4, v5): after the text header line, binary data follows.
+		local nl = body:find("\n", 1, true)
+		if not nl then return nil, "binary mesh: no header newline" end
+		local pos = nl + 1 -- start of binary data
+
+		-- Binary header: meshVersion(u32), is16Bit(u8), numVerts(u32), numFaces(u32)
+		local _meshVersion, pos2 = read_u32_le(body, pos)
+		local is16bit = string.byte(body, pos2) or 0
+		pos = pos2 + 1
+		local num_verts, pos3 = read_u32_le(body, pos)
+		local num_faces, pos4 = read_u32_le(body, pos3)
+		pos = pos4
+
+		if num_verts == 0 or num_verts > 9999999 then return nil, "binary mesh: bad vertex count" end
+		if num_faces > 9999999 then return nil, "binary mesh: bad face count" end
+
+		-- Compute vertex stride from remaining data to handle v4 vs v5 layout differences.
+		-- Face indices are uint16 (6 bytes/face) when is16bit is set, uint32 (12 bytes/face) otherwise.
+		local face_bpf = is16bit == 1 and 6 or 12
+		local remaining = #body - pos + 1
+		local face_bytes = num_faces * face_bpf
+		local vertex_bytes = remaining - face_bytes
+		if vertex_bytes <= 0 or num_verts == 0 then return nil, "binary mesh: size mismatch" end
+		local stride = math.floor(vertex_bytes / num_verts)
+
+		local out = { "# Roblox mesh v" .. major .. " converted to OBJ\n" }
+		-- Read positions (first 12 bytes of each vertex = 3 floats LE).
+		local vpos = pos
+		for _ = 1, num_verts do
+			local px, p2 = read_f32_le(body, vpos)
+			local py, p3 = read_f32_le(body, p2)
+			local pz = read_f32_le(body, p3)
+			out[#out + 1] = string.format("v %.6f %.6f %.6f\n", px, py, pz)
+			vpos = vpos + stride -- jump to next vertex
+		end
+		-- Read face indices (after all vertex data).
+		local fpos = pos + num_verts * stride
+		for _ = 1, num_faces do
+			local f1, f2, f3
+			if is16bit == 1 then
+				f1, fpos = read_u16_le(body, fpos)
+				f2, fpos = read_u16_le(body, fpos)
+				f3, fpos = read_u16_le(body, fpos)
+			else
+				f1, fpos = read_u32_le(body, fpos)
+				f2, fpos = read_u32_le(body, fpos)
+				f3, fpos = read_u32_le(body, fpos)
+			end
+			-- OBJ is 1-indexed; Roblox mesh indices are 0-indexed.
+			out[#out + 1] = string.format("f %d %d %d\n", f1 + 1, f2 + 1, f3 + 1)
+		end
+		return table.concat(out)
+	end
+
 	-- Collect unique rbxassetid:// IDs + property hint (skip rbxasset://, http://, https://).
 	local ids, seen = {}, {}
 	for uri, meta in manifest_set do
@@ -2746,6 +2905,8 @@ local function download_assets(manifest_set, O, report)
 	local first_write_err = nil
 	local subfolder_failed = false
 	local first_http_err = nil -- first HTTP-level failure reason (status code / error), for diagnostics
+	local mesh_converted = 0 -- count of .mesh files successfully converted to .obj
+	local mesh_convert_fail = 0 -- count of .mesh files that failed conversion (saved as .mesh instead)
 
 	-- Build a file path for an asset. Tries subfolder first; falls back to flat filename
 	-- (and backslash separator on Windows executors that reject "/") if needed.
@@ -2871,7 +3032,20 @@ local function download_assets(manifest_set, O, report)
 		if ext == "bin" then
 			ext = guess_ext_from_property(item.property) or "bin"
 		end
-		if safe_write(item.id, ext, body) then
+		-- Convert .mesh to .obj on the fly so the file can be imported into Studio/Blender.
+		-- The raw .mesh is Roblox's internal binary format and can't be drag-dropped into Studio.
+		local write_ext, write_body = ext, body
+		if ext == "mesh" and O.DownloadAssetsConvertMesh then
+			local obj_ok, obj_str = pcall(mesh_to_obj, body)
+			if obj_ok and obj_str and obj_str ~= "" then
+				write_ext, write_body = "obj", obj_str
+				mesh_converted += 1
+			else
+				mesh_convert_fail += 1
+				-- Fall back to saving the raw .mesh if conversion fails.
+			end
+		end
+		if safe_write(item.id, write_ext, write_body) then
 			ok_count += 1
 		else
 			fail_count += 1
@@ -2918,6 +3092,10 @@ local function download_assets(manifest_set, O, report)
 	end
 	if first_http_err and fail_count > 0 then
 		print(string.format("[saveinstance] DownloadAssets: first HTTP failure: %s", first_http_err))
+	end
+	if mesh_converted > 0 or mesh_convert_fail > 0 then
+		print(string.format("[saveinstance] DownloadAssets: mesh→obj: %d converted, %d failed (saved as .mesh)",
+			mesh_converted, mesh_convert_fail))
 	end
 	print(string.format("[saveinstance] DownloadAssets: %d ok, %d failed (out of %d) -> %s%s",
 		ok_count, fail_count, total, use_subfolder and not subfolder_failed and (dir .. "/") or "(flat: " .. dir .. "_*)",
@@ -3354,6 +3532,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		DownloadAssetsDir = "saveinstance_assets",
 		DownloadAssetsConcurrency = 8, -- parallel downloads kept in flight
 		DownloadAssetsMax = 0, -- 0 = no cap; set a number to stop after N downloads
+		DownloadAssetsConvertMesh = true, -- convert .mesh to .obj on the fly (Studio-importable); raw .mesh can't be drag-dropped
 
 			-- * Decompilation prepass: parallel-decompile all client scripts via an external API before saving (big speedup on script-heavy games). RISKY: sends script bytecode to a third-party API.
 		DecompilePrepass = false,
@@ -3496,6 +3675,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			-- booleans
 			AssetManifest = "boolean",
 			DownloadAssets = "boolean",
+			DownloadAssetsConvertMesh = "boolean",
 			VerifySave = "boolean",
 			ResumeSave = "boolean",
 			Debug = "boolean",
