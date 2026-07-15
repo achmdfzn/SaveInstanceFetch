@@ -8,11 +8,11 @@ SaveInstanceFetch adalah fork dari [UniversalSynSaveInstance](https://github.com
 
 **Kenapa pakai ini?**
 
-- 🎯 **Visual akurat** — terrain, union, meshpart, decal, sound semua ter-render benar di Studio
-- ⚡ **Cepat** — table buffer menggantikan string concatenation (fix O(n²) memory issue di game besar)
-- 🔒 **Aman** — resume decompile kalau crash, cache persisten biar run kedua lebih cepat
-- 📦 **Recovery lengkap** — export mesh private ke `.obj`, download asset ke folder, daftar semua asset ID
-- 🩺 **Diagnostik** — laporan capability executor + verifikasi hasil save
+- **Visual akurat** — terrain, union, meshpart, decal, sound semua ter-render benar di Studio
+- **Cepat** — table buffer menggantikan string concatenation (fix O(n²) memory issue di game besar)
+- **Aman** — resume decompile kalau crash, cache persisten biar run kedua lebih cepat
+- **Recovery lengkap** — export mesh private ke `.obj`, download asset ke folder, daftar semua asset ID
+- **Diagnostik** — laporan capability executor + verifikasi hasil save
 
 ## Packages
 
@@ -56,16 +56,16 @@ prepass(Options, PrepassOptions)
 
 ### Cara Pakai
 
-1. **Buka executor** kamu (Xeno, Solara, Wave, Volt, dll)
-2. **Inject / attach** ke Roblox
-3. **Paste snippet di atas** ke console executor
-4. **Execute** — tunggu sampai muncul `[saveinstance] Saved!`
-5. **Cek hasil** di folder workspace executor:
+1. Buka executor kamu (Xeno, Solara, Wave, Volt, dll)
+2. Inject / attach ke Roblox
+3. Paste snippet di atas ke console executor
+4. Execute — tunggu sampai muncul `[saveinstance] Saved!`
+5. Cek hasil di folder workspace executor:
    - `*.rbxlx` — file save (buka di Roblox Studio)
    - `saveinstance-capabilities.txt` — laporan dukungan executor
    - `saveinstance-verify.txt` — statistik hasil save
    - `saveinstance-assets.txt` — daftar semua asset ID
-   - `saveinstance-assets/` — folder asset yang di-download (kalau `DownloadAssets = true`)
+   - `saveinstance_assets/` — folder asset yang di-download (kalau `DownloadAssets = true`)
 
 ### Quick Switch
 
@@ -92,7 +92,7 @@ Daftar opsi lengkap: [`docs/option.md`](docs/option.md).
 - **Private mesh recovery** — `ExportObj` bake geometry MeshPart ke `.obj` world-space
 - **Persistent decompile cache** — `PersistentCache` simpan hasil decompile di disk, skip API pihak ketiga di run berikutnya
 - **Asset manifest** — `AssetManifest` daftar semua URI aset (`rbxassetid://`, `rbxasset://`, `http://`)
-- **Asset downloader** — `DownloadAssets` otomatis download semua `rbxassetid://` ke folder workspace, siap drag-drop ke Studio
+- **Asset downloader** — `DownloadAssets` otomatis download semua `rbxassetid://` ke folder workspace, deteksi tipe file dari magic bytes (PNG/OGG/mesh/rbxm), siap drag-drop ke Studio
 - **Save verification** — `VerifySave` hitung script/union/meshpart yang ter-recover
 - **Granular filtering** — `IgnoreNamePatterns`, `IgnoreTags`, `SaveOnlyTags`
 - **Resume decompile** — `ResumeSave` checkpoint ke disk, lanjut dari titik terakhir kalau crash
@@ -117,6 +117,8 @@ loadstring(game:HttpGet(
 
 | Tanggal | Perubahan |
 |---------|-----------|
+| 2026-07-15 | Hardening DownloadAssets: fix bug isfolder, HTTP timeout, retry transient, deadlock protection, backslash fallback |
+| 2026-07-15 | Deteksi tipe file dari magic bytes, simpan dengan ekstensi benar (png/ogg/mesh/rbxm) |
 | 2026-07-15 | Fix Content descriptor crash pada string `rbxassetid://` |
 | 2026-07-15 | Tambah runtime option type validation |
 | 2026-07-15 | Tambah `DownloadAssets` — download asset dari manifest ke disk |
@@ -127,11 +129,11 @@ loadstring(game:HttpGet(
 
 | Executor | Terrain | Union Mesh | Scripts | Notes |
 |----------|---------|------------|---------|-------|
-| Synapse / Wave | ✅ | ✅ | ✅ | Full support |
-| Volt | ✅ | ✅ | ✅ | Full support, has native decompiler |
-| Xeno | ❌ | ❌ | ✅ | No `gethiddenproperty` — terrain & union mesh tidak tersimpan |
-| Solara | ❌ | ❌ | ✅ | No `gethiddenproperty` — fallback ke bounding box |
-| Fluxus | ✅ | ⚠️ | ✅ | `gethiddenproperty` ada tapi bisa buggy |
+| Synapse / Wave | Yes | Yes | Yes | Full support |
+| Volt | Yes | Yes | Yes | Full support, has native decompiler |
+| Xeno | No | No | Yes | No `gethiddenproperty` — terrain & union mesh tidak tersimpan |
+| Solara | No | No | Yes | No `gethiddenproperty` — fallback ke bounding box |
+| Fluxus | Yes | Partial | Yes | `gethiddenproperty` ada tapi bisa buggy |
 
 > Cek `saveinstance-capabilities.txt` setelah run untuk tau dukungan executor kamu.
 

@@ -2745,6 +2745,7 @@ local function download_assets(manifest_set, O, report)
 	local next_index = 1
 	local first_write_err = nil
 	local subfolder_failed = false
+	local first_http_err = nil -- first HTTP-level failure reason (status code / error), for diagnostics
 
 	-- Build a file path for an asset. Tries subfolder first; falls back to flat filename
 	-- (and backslash separator on Windows executors that reject "/") if needed.
@@ -2784,23 +2785,71 @@ local function download_assets(manifest_set, O, report)
 		return false
 	end
 
+	-- Follow a redirect response (301/302/303/307/308). Returns the final URL or nil.
+	-- assetdelivery.roblox.com always 302-redirects to the CDN; some executors (Xeno, WRD)
+	-- don't auto-follow redirects, so we must chase the Location header ourselves.
+	local function resolve_redirect(res)
+		if type(res) ~= "table" then return nil end
+		local code = res.StatusCode or 0
+		if code ~= 301 and code ~= 302 and code ~= 303 and code ~= 307 and code ~= 308 then
+			return nil
+		end
+		-- Headers may be a table keyed by string or mixed-case; try common variants.
+		local Headers = res.Headers or {}
+		local loc = Headers.location or Headers.Location or Headers["Location"]
+			or Headers["location"] or (type(Headers) == "table" and rawget(Headers, "location"))
+		-- Some executors return header names in mixed case inside a flat table.
+		if not loc and type(Headers) == "table" then
+			for k, v in Headers do
+				if type(k) == "string" and string.lower(k) == "location" then
+					loc = v
+					break
+				end
+			end
+		end
+		return loc
+	end
+
 	-- Download a single asset with retry on transient failure (429/500/timeout).
 	local function download_one(item)
 		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. item.id
 		local body = nil
+		local last_code = 0
+		local last_err = nil
 		for attempt = 1, 2 do -- 1 original + 1 retry
 			local res_ok, res = pcall(HttpRequest, {
 				Url = url,
 				Method = "GET",
-				Timeout = 15, -- seconds; prevents infinite hang on CDN stall
 			})
-			if res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "" then
-				body = res.Body
-				break
+			if res_ok and type(res) == "table" then
+				last_code = res.StatusCode or 0
+				-- 200 OK: we have the asset body directly.
+				if res.StatusCode == 200 and res.Body and res.Body ~= "" then
+					body = res.Body
+					break
+				end
+				-- 302/301 redirect: chase the Location header to the CDN, then fetch that.
+				local cdn_url = resolve_redirect(res)
+				if cdn_url and cdn_url ~= "" then
+					local cdn_ok, cdn_res = pcall(HttpRequest, {
+						Url = cdn_url,
+						Method = "GET",
+					})
+					if cdn_ok and type(cdn_res) == "table" then
+						last_code = cdn_res.StatusCode or last_code
+						if cdn_res.StatusCode == 200 and cdn_res.Body and cdn_res.Body ~= "" then
+							body = cdn_res.Body
+							break
+						end
+					elseif not cdn_ok then
+						last_err = tostring(cdn_res)
+					end
+				end
+			else
+				last_err = tostring(res)
 			end
 			-- Only retry on transient errors (429/5xx/timeout); don't retry 404 etc.
-			local code = res and type(res) == "table" and res.StatusCode or 0
-			if code ~= 429 and code < 500 and code ~= 0 then
+			if last_code ~= 429 and last_code < 500 and last_code ~= 0 then
 				break -- permanent failure, no retry
 			end
 			if attempt < 2 then
@@ -2808,6 +2857,12 @@ local function download_assets(manifest_set, O, report)
 			end
 		end
 		if not body then
+			if not first_http_err then
+				-- Build a short diagnostic string so the user can see WHY the first download failed.
+				first_http_err = "id=" .. tostring(item.id)
+					.. " — HTTP " .. (last_code > 0 and last_code or "error")
+					.. (last_err and (" (" .. last_err .. ")") or "")
+			end
 			fail_count += 1
 			return
 		end
@@ -2860,6 +2915,9 @@ local function download_assets(manifest_set, O, report)
 	end
 	if first_write_err and fail_count > 0 and ok_count == 0 then
 		print(string.format("[saveinstance] DownloadAssets: all writes failed — first error: %s", first_write_err))
+	end
+	if first_http_err and fail_count > 0 then
+		print(string.format("[saveinstance] DownloadAssets: first HTTP failure: %s", first_http_err))
 	end
 	print(string.format("[saveinstance] DownloadAssets: %d ok, %d failed (out of %d) -> %s%s",
 		ok_count, fail_count, total, use_subfolder and not subfolder_failed and (dir .. "/") or "(flat: " .. dir .. "_*)",
