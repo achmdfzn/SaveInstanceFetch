@@ -2648,6 +2648,7 @@ end
 
 -- DownloadAssets: fetch every rbxassetid:// asset from the manifest into a folder.
 -- Needs an HTTP request function + writefile/makefolder. Skips rbxasset:// (built-in, not downloadable).
+-- Detects file type from magic bytes + manifest property hint, saves with correct extension.
 local function download_assets(manifest_set, O, report)
 	local HttpRequest = get_http_request()
 	if not HttpRequest then
@@ -2664,13 +2665,54 @@ local function download_assets(manifest_set, O, report)
 		pcall(makefolder, dir)
 	end
 
-	-- Collect unique rbxassetid:// IDs (skip rbxasset://, http://, https:// — only Roblox CDN assets).
+	-- Detect file extension from the first few bytes of the response body (magic bytes).
+	local function detect_ext(body)
+		if not body or body == "" then return "bin" end
+		-- PNG
+		if body:sub(1, 4) == "\137PNG" then return "png" end
+		-- JPEG
+		if body:sub(1, 3) == "\255\216\255" then return "jpg" end
+		-- GIF
+		if body:sub(1, 4) == "GIF8" then return "gif" end
+		-- BMP
+		if body:sub(1, 2) == "BM" then return "bmp" end
+		-- DDS
+		if body:sub(1, 4) == "DDS " then return "dds" end
+		-- OGG (Roblox sounds)
+		if body:sub(1, 4) == "OggS" then return "ogg" end
+		-- WebM
+		if body:sub(1, 4) == "\26\69\223\163" then return "webm" end
+		-- WAV / RIFF
+		if body:sub(1, 4) == "RIFF" then return "wav" end
+		-- MP3 (ID3 tag or frame sync)
+		if body:sub(1, 3) == "ID3" or body:sub(1, 2) == "\255\251" or body:sub(1, 2) == "\255\252" then return "mp3" end
+		-- Roblox mesh (text: "version N\x0a...")
+		if body:sub(1, 8) == "version " then return "mesh" end
+		-- Roblox model/XML
+		if body:sub(1, 7) == "<roblox" then return "rbxm" end
+		-- BOM / JSON (some animation assets)
+		if body:sub(1, 1) == "{" then return "json" end
+		return "bin"
+	end
+
+	-- Fallback: guess extension from the manifest Property name if magic bytes are inconclusive.
+	local function guess_ext_from_property(prop)
+		if not prop then return nil end
+		if string_find(prop, "Mesh") then return "mesh" end
+		if string_find(prop, "Texture") or string_find(prop, "Image") or string_find(prop, "Color") or string_find(prop, "Normal") then return "png" end
+		if string_find(prop, "Sound") then return "ogg" end
+		if string_find(prop, "Animation") then return "rbxm" end
+		if string_find(prop, "Shirt") or string_find(prop, "Pants") then return "png" end
+		return nil
+	end
+
+	-- Collect unique rbxassetid:// IDs + property hint (skip rbxasset://, http://, https://).
 	local ids, seen = {}, {}
-	for uri in manifest_set do
+	for uri, meta in manifest_set do
 		local id = string.match(uri, "rbxassetid://(%d+)")
 		if id and not seen[id] then
 			seen[id] = true
-			ids[#ids + 1] = id
+			ids[#ids + 1] = { id = id, property = meta and meta.Property or nil }
 		end
 	end
 
@@ -2689,16 +2731,19 @@ local function download_assets(manifest_set, O, report)
 	local ok_count, fail_count = 0, 0
 	local next_index = 1
 
-	local function download_one(id)
-		-- Try the standard Roblox asset delivery endpoint. We don't know the type, so save as .bin.
-		-- The user can rename/re-import later. The asset ID is preserved in the filename.
-		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. id
+	local function download_one(item)
+		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. item.id
 		local res_ok, res = pcall(HttpRequest, {
 			Url = url,
 			Method = "GET",
 		})
 		if res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "" then
-			local path = dir .. "/" .. id .. ".bin"
+			-- Detect extension from magic bytes, fall back to property hint, then .bin.
+			local ext = detect_ext(res.Body)
+			if ext == "bin" then
+				ext = guess_ext_from_property(item.property) or "bin"
+			end
+			local path = dir .. "/" .. item.id .. "." .. ext
 			local w_ok = pcall(writefile, path, res.Body)
 			if w_ok then
 				ok_count += 1
