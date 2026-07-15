@@ -29,7 +29,9 @@ local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmd
 
 ## Usage
 
-Recommended wrapper usage keeps the legacy prepass cache hook enabled, then loads this repository's `saveinstance.luau`.
+### A) Legacy Prepass (default)
+
+Wrapper `prepass.luau` mengelola decompile sendiri via API, cache persisten ke disk, dan hook `decompile`. Paling aman kalau mau cache script tetap tersedia antar-run.
 
 ```luau
 local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
@@ -45,12 +47,12 @@ local PrepassOptions = {
     RequestTimeout = 20,
     ApiUrl = "https://api.lua.expert/decompile",
     Verbose = true,
-    SkipPrepass = false, -- skip cache warm-up, go straight to saveinstance
-    SkipSaveInstance = false, -- run only the prepass, don't call saveinstance
-    UseSaveInstancePrepass = false, -- set true to use saveinstance's built-in DecompilePrepass instead
-    PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
-    CacheDir = "saveinstance_decompile_cache", -- workspace folder for the persistent cache
-    ClearCache = false, -- wipe the cache before this run to force a fresh decompile
+    SkipPrepass = false,        -- skip cache warm-up, go straight to saveinstance
+    SkipSaveInstance = false,   -- run only the prepass, don't call saveinstance
+    UseSaveInstancePrepass = false,
+    PersistentCache = true,     -- reuse decompiled scripts from disk across runs
+    CacheDir = "saveinstance_decompile_cache",
+    ClearCache = false,         -- wipe the cache before this run to force a fresh decompile
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
     ScriptName = "saveinstance",
 }
@@ -58,11 +60,47 @@ local PrepassOptions = {
 prepass(Options, PrepassOptions)
 ```
 
-To use the newer built-in `DecompilePrepass` from `saveinstance.luau` instead of the legacy hook, set:
+### B) Built-in DecompilePrepass
+
+Gunakan decompile parallel bawaan `saveinstance.luau` — tanpa hook tambahan. Cukup aktifkan via `UseSaveInstancePrepass = true`.
 
 ```luau
+local prepass = loadstring(game:HttpGet("https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
+
+local Options = {
+    CapabilityReport = true,
+}
+
 local PrepassOptions = {
     UseSaveInstancePrepass = true,
+    -- semua param decompile (MaxInFlight, RequestsPerMinute, ApiUrl) otomatis diteruskan ke saveinstance
+}
+
+prepass(Options, PrepassOptions)
+```
+
+### C) Verify + AssetManifest
+
+Untuk mendapatkan laporan verifikasi dan daftar aset yang tercapture:
+
+```luau
+local Options = {
+    FullUnionTerrainSupport = true,
+    AssetManifest = true,      -- buat saveinstance-assets.txt (semua rbxassetid://, rbxasset://, http://)
+    VerifySave = true,         -- buat saveinstance-verify.txt (statistik script, union, meshpart)
+    CapabilityReport = true,
+}
+```
+
+### D) Resume setelah crash
+
+Kalau game crash di tengah save, `ResumeSave` menyimpan checkpoint decompile cache ke disk supaya run berikutnya lanjut dari situ:
+
+```luau
+local Options = {
+    DecompilePrepass = true,   -- atau UseSaveInstancePrepass = true lewat prepass
+    ResumeSave = true,
+    ResumeCheckpointInterval = 200,
 }
 ```
 
