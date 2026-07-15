@@ -65,6 +65,22 @@ prepass(Options, PrepassOptions)
    - `saveinstance-assets.txt` — list of all asset IDs
    - `saveinstance_assets/` — downloaded assets (when `DownloadAssets = true`)
 
+### Downloaded assets (`saveinstance_assets/`)
+
+Files are saved with the correct extension based on magic bytes detection:
+
+| Extension | Studio drag-drop? | How to use |
+|-----------|:-:|------------|
+| `.png` `.jpg` `.bmp` | Yes | Drag into viewport → creates Decal |
+| `.ogg` | Yes | Drag into viewport → creates Sound |
+| `.rbxm` | Yes | Drag into viewport → inserts model |
+| `.mesh` | No | Roblox internal format — see below |
+| `.bin` | No | Unknown type — rename to inspect |
+
+**About `.mesh` files:** Roblox Studio does not support importing `.mesh` files directly — it's Roblox's internal binary mesh format, not a standard 3D format. The downloaded `.mesh` files serve as **offline backups** of the asset. When you open the `.rbxlx` save in Studio with internet, MeshParts with `MeshId = rbxassetid://ID` load from the Roblox CDN automatically — the downloaded files aren't needed for that.
+
+For **offline or private mesh recovery** (meshes Studio can't re-download), use `ExportObj = true` instead — it bakes all MeshPart geometry to `.obj` (which Studio CAN import) via `AssetService:CreateEditableMeshAsync`.
+
 ### Quick Switch
 
 Add these to `Options` as needed:
@@ -72,7 +88,7 @@ Add these to `Options` as needed:
 | Goal | Add this |
 |------|----------|
 | Full union mesh + terrain on StreamingEnabled maps | `FullUnionTerrainSupport = true` |
-| Recover private meshes to `.obj` (Blender) | `ExportObj = true, SetStreaming = true` |
+| Recover private meshes to `.obj` (Blender / Studio import) | `ExportObj = true, SetStreaming = true` |
 | Save structure/map only, skip decompile | `noscripts = true` |
 | Skip instances by name pattern | `IgnoreNamePatterns = {"^Camera$"}` |
 | Skip instances by CollectionService tag | `IgnoreTags = {"EditorOnly"}` |
