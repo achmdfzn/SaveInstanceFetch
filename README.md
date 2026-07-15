@@ -50,6 +50,7 @@ Daftar opsi lengkap: [`docs/option.md`](docs/option.md).
 
 ## Features
 
+- **Runtime option validation** — kalau tipe data option salah (misal `SetStreaming = "true"` string), script langsung `warn()` dengan pesan jelas sebelum save dimulai
 - **Faster, lighter saves** — table buffer menggantikan string concatenation, memperbaiki growth O(n^2) yang bikin "not enough memory" di game besar
 - **Terrain, unions, & media** — SmoothGrid/PhysicsGrid, union MeshData2, decal/gambar/suara semua ter-render benar
 - **Whole-map capture** — `SetStreaming` / `FullUnionTerrainSupport` force-load map StreamingEnabled sebelum save
