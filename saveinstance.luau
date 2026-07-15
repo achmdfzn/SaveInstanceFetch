@@ -2647,8 +2647,10 @@ local function write_verify_report(O, save_ok, elapsed)
 end
 
 -- DownloadAssets: fetch every rbxassetid:// asset from the manifest into a folder.
--- Needs an HTTP request function + writefile/makefolder. Skips rbxasset:// (built-in, not downloadable).
+-- Needs an HTTP request function + writefile. Skips rbxasset:// (built-in, not downloadable).
 -- Detects file type from magic bytes + manifest property hint, saves with correct extension.
+-- Falls back to flat filenames (no subfolder) on executors without makefolder or where writefile
+-- can't write into subfolders (e.g. Xeno).
 local function download_assets(manifest_set, O, report)
 	local HttpRequest = get_http_request()
 	if not HttpRequest then
@@ -2661,8 +2663,17 @@ local function download_assets(manifest_set, O, report)
 	end
 
 	local dir = tostring(O.DownloadAssetsDir or "saveinstance_assets")
+	-- Try to create the subfolder. Some executors (Xeno, WRD) don't expose makefolder or can't
+	-- writefile into subfolders — we detect that later and fall back to flat filenames.
+	local use_subfolder = false
 	if makefolder then
 		pcall(makefolder, dir)
+		-- Verify the folder actually exists now.
+		if isfolder then
+			use_subfolder = pcall(isfolder, dir) and true or false
+		else
+			use_subfolder = true -- assume it worked; we'll detect failure on first write
+		end
 	end
 
 	-- Detect file extension from the first few bytes of the response body (magic bytes).
@@ -2730,6 +2741,8 @@ local function download_assets(manifest_set, O, report)
 
 	local ok_count, fail_count = 0, 0
 	local next_index = 1
+	local first_write_err = nil
+	local subfolder_failed = false
 
 	local function download_one(item)
 		local url = "https://assetdelivery.roblox.com/v1/asset?id=" .. item.id
@@ -2737,21 +2750,30 @@ local function download_assets(manifest_set, O, report)
 			Url = url,
 			Method = "GET",
 		})
-		if res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "" then
-			-- Detect extension from magic bytes, fall back to property hint, then .bin.
-			local ext = detect_ext(res.Body)
-			if ext == "bin" then
-				ext = guess_ext_from_property(item.property) or "bin"
-			end
-			local path = dir .. "/" .. item.id .. "." .. ext
-			local w_ok = pcall(writefile, path, res.Body)
-			if w_ok then
-				ok_count += 1
-			else
-				fail_count += 1
-			end
+		if not (res_ok and type(res) == "table" and res.StatusCode == 200 and res.Body and res.Body ~= "") then
+			fail_count += 1
+			return
+		end
+		-- Detect extension from magic bytes, fall back to property hint, then .bin.
+		local ext = detect_ext(res.Body)
+		if ext == "bin" then
+			ext = guess_ext_from_property(item.property) or "bin"
+		end
+		-- Try subfolder path first; on failure fall back to flat filename in workspace root.
+		local path = use_subfolder and (dir .. "/" .. item.id .. "." .. ext) or (dir .. "_" .. item.id .. "." .. ext)
+		local w_ok, w_err = pcall(writefile, path, res.Body)
+		if not w_ok and use_subfolder and not subfolder_failed then
+			-- writefile into subfolder failed — switch to flat filenames for all remaining downloads.
+			subfolder_failed = true
+			first_write_err = tostring(w_err)
+			path = dir .. "_" .. item.id .. "." .. ext
+			w_ok, w_err = pcall(writefile, path, res.Body)
+		end
+		if w_ok then
+			ok_count += 1
 		else
 			fail_count += 1
+			first_write_err = first_write_err or tostring(w_err)
 		end
 	end
 
@@ -2779,7 +2801,15 @@ local function download_assets(manifest_set, O, report)
 		task.wait()
 	end
 
-	print(string.format("[saveinstance] DownloadAssets: %d ok, %d failed (out of %d) -> %s/", ok_count, fail_count, total, dir))
+	if subfolder_failed then
+		print(string.format("[saveinstance] DownloadAssets: subfolder write failed (%s) — fell back to flat files", first_write_err or "unknown error"))
+	end
+	if first_write_err and fail_count > 0 and ok_count == 0 then
+		print(string.format("[saveinstance] DownloadAssets: all writes failed — first error: %s", first_write_err))
+	end
+	print(string.format("[saveinstance] DownloadAssets: %d ok, %d failed (out of %d) -> %s%s",
+		ok_count, fail_count, total, use_subfolder and not subfolder_failed and (dir .. "/") or "(flat: " .. dir .. "_*)",
+		use_subfolder and "" or " (no makefolder)"))
 	return ok_count, fail_count
 end
 
@@ -2800,6 +2830,9 @@ local function write_capability_report(O, missing, save_ok, elapsed, save_err)
 		"- http_request: " .. tostring(get_http_request() ~= nil),
 		"- base64encode: " .. tostring(base64encode ~= nil),
 		"- writefile: " .. tostring(writefile ~= nil),
+		"- makefolder: " .. tostring(makefolder ~= nil),
+		"- isfolder: " .. tostring(isfolder ~= nil),
+		"- appendfile: " .. tostring(appendfile ~= nil),
 		"- getloadedmodules: " .. tostring(getloadedmodules ~= nil),
 		"- sha384: " .. tostring(sha384 ~= nil),
 		"",
