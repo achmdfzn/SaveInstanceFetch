@@ -153,8 +153,8 @@ local function InitDiskCache()
     end
     local Dir = tostring(Config.CacheDir or "saveinstance_decompile_cache")
     if IsFolder and MakeFolder then
-        local Exists = pcall(IsFolder, Dir)
-        if not (Exists and IsFolder(Dir)) then
+        local OkExists, Exists = pcall(IsFolder, Dir)
+        if not (OkExists and Exists) then
             pcall(MakeFolder, Dir)
         end
     end
@@ -269,8 +269,19 @@ local function RunPool(Items, Worker)
     for _ = 1, math.min(MaxInFlight, Total) do
         StartNext()
     end
+    -- Wait for all workers, but cap the wait so a hung API request or crashed
+    -- worker can't stall the prepass forever (30s grace per script, minimum 120s).
+    local max_wait = math.max(120, Total * 30)
+    local waited = 0
     while Done < Total do
-        task.wait()
+        task.wait(0.5)
+        waited += 0.5
+        if waited >= max_wait then
+            if Config.Verbose then
+                warn(("[prepass] timed out after %.0fs (%d/%d done)"):format(waited, Done, Total))
+            end
+            break
+        end
     end
 end
 
@@ -285,8 +296,16 @@ end
 
 local function GatherUniqueScripts()
     local Objs = {}
-    for _, o in next, game:GetDescendants() do
-        if o:IsA("LuaSourceContainer") and not IsCoreInstance(o) then
+    local OkDesc, Descendants = pcall(game.GetDescendants, game)
+    if not (OkDesc and type(Descendants) == "table") then
+        Descendants = {}
+        if Config.Verbose then
+            warn("[prepass] game:GetDescendants() failed — no scripts gathered from descendant scan")
+        end
+    end
+    for _, o in next, Descendants do
+        local OkIs, IsLSC = pcall(function() return o:IsA("LuaSourceContainer") end)
+        if OkIs and IsLSC and not IsCoreInstance(o) then
             local IsServer = o:IsA("Script") and (o.RunContext == Enum.RunContext.Legacy or o.RunContext == Enum.RunContext.Server)
             if not IsServer then
                 Objs[#Objs + 1] = cloneref(o)
