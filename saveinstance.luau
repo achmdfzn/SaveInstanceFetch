@@ -1875,7 +1875,7 @@ do
 
 			if ClassTags then
 				local Tags = ArrayToDict(ClassTags, nil, nil, "string")
-				-- Class.Tags = Tags -- or {}
+				Class.Tags = Tags -- consumed as ClassList[name].Tags by the NotCreatable check (default-props path) and the Service nil-out pass
 				Class.NotCreatable = Tags.NotCreatable
 				Class.Service = Tags.Service
 			end

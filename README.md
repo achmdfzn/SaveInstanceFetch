@@ -139,6 +139,9 @@ loadstring(game:HttpGet(
 | Date | Change |
 |------|--------|
 | 2026-07-16 | Fix `bit32.byteswap` polyfill mask constants (corrupted Base64/hashlib output on executors like Fluxus) |
+| 2026-07-16 | Fix `ClassList[...].Tags` never populated — restores NotCreatable/Service class detection |
+| 2026-07-16 | Prepass: never write API error text as script source when decompile fails |
+| 2026-07-16 | Prepass: degrade gracefully on executors without getscriptbytecode/HTTP — save without decompile instead of aborting |
 | 2026-07-16 | Document recommended usage options inline; add NeutralizeLighting/CapabilityReport/AntiIdle to features |
 | 2026-07-16 | Convert `.mesh` to `.obj` during DownloadAssets (Studio-importable); supports v1–v5 mesh formats |
 | 2026-07-15 | Fix DownloadAssets: follow 302 redirect to CDN, HTTP failure diagnostics |

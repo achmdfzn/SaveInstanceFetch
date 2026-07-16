@@ -514,8 +514,11 @@ local function InstallDecompileHook()
             if Good then
                 Cache[Bc] = Body
                 DiskCacheSet(Bc, Body)
+                return Body
             end
-            return Body
+            -- On failure, Body holds the API error text ("timeout", HTTP error body, ...).
+            -- Return a comment instead so the error string is never written as script source.
+            return "-- decompile failed: " .. tostring(Body)
         end
         return "-- could not read script bytecode"
     end
@@ -565,10 +568,18 @@ return function(Options, PrepassOptions)
         end
     else
         InitDiskCache()
+        -- Degrade gracefully: if the executor lacks getscriptbytecode/HTTP, skip the
+        -- decompile prepass entirely and still run saveinstance (scripts stay empty)
+        -- instead of aborting the whole loader via AssertPrepassCapabilities.
+        local CanPrepass = getscriptbytecode and HttpRequest
         if not PrepassOptions.SkipPrepass then
-            InstallDecompileHook()
-            Prepass()
-        elseif getscriptbytecode and HttpRequest then
+            if CanPrepass then
+                InstallDecompileHook()
+                Prepass()
+            elseif Config.Verbose then
+                print("[prepass] executor lacks getscriptbytecode/http; skipping decompile prepass and saving without decompiled scripts")
+            end
+        elseif CanPrepass then
             InstallDecompileHook()
         elseif Config.Verbose then
             print("[prepass] SkipPrepass enabled; decompile hook not installed because executor capability is missing")
