@@ -222,6 +222,17 @@ do -- * Load Region of Déjà Vu
 				return num
 			end
 
+			-- Self-test the polyfill: byteswap must reverse the 4 bytes of a 32-bit word.
+			-- Guards against regressions in the mask/tobit math (the fallback path only
+			-- runs on executors like Fluxus that lack a native bit32.byteswap, so a bad
+			-- polyfill would otherwise corrupt Base64/hashlib output silently).
+			assert(
+				bit32.byteswap(0x11223344) == 0x44332211
+					and bit32.byteswap(0x00000001) == 0x01000000
+					and bit32.byteswap(0xFF000000) == 0x000000FF,
+				"bit32.byteswap polyfill is incorrect"
+			)
+
 			table.freeze(bit32)
 		end
 
