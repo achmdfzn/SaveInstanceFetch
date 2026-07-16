@@ -195,9 +195,9 @@ do -- * Load Region of Déjà Vu
 			bit32 = table.clone(bit32)
 
 			local function tobit(num)
-				num %= (bit32.bxor(num, 32))
+				num %= 2 ^ 32
 				if 0x80000000 < num then
-					num -= bit32.bxor(num, 32)
+					num -= 2 ^ 32
 				end
 				return num
 			end
@@ -206,7 +206,7 @@ do -- * Load Region of Déjà Vu
 				local BYTE_SIZE = 8
 				local MAX_BYTE_VALUE = 255
 
-				num %= bit32.bxor(2, 32)
+				num %= 2 ^ 32
 
 				local a = bit32.band(num, MAX_BYTE_VALUE)
 				num = bit32.rshift(num, BYTE_SIZE)
