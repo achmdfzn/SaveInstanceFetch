@@ -5764,7 +5764,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	end
 end
 
--- Returns the function so it can be loaded as a library, matching the original USSI loader:
---   local synsaveinstance = loadstring(game:HttpGet(RepoURL .. "saveinstance.luau", true), "saveinstance")()
---   synsaveinstance({ ...options... })
+-- Returns the function so it can be loaded as a library (USSI-style loader):
+--   local Params = {
+--       RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
+--       SSI = "saveinstance",
+--   }
+--   local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
+--   local Options = {} -- see docs/option.md
+--   synsaveinstance(Options)
 return synsaveinstance

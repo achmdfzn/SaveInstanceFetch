@@ -9,25 +9,14 @@ Fork of [UniversalSynSaveInstance](https://github.com/luao/UniversalSynSaveInsta
 Paste this into your executor:
 
 ```luau
-local prepass = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
-
-local Options = {
-    SetStreaming       = false, -- force-load the whole StreamingEnabled map first (set true for big maps)
-    NeutralizeLighting = false, -- reset Lighting to clean midday so the place opens bright, not dark/foggy
-    ExportObj          = false, -- also bake MeshPart geometry to .obj (recovers private meshes; pair with SetStreaming)
-    CapabilityReport   = true,  -- write saveinstance-capabilities.txt (executor support + likely limitations)
-    AssetManifest      = true,  -- write saveinstance-assets.txt listing every asset URI in the save
-    DownloadAssets     = true,  -- download every rbxassetid:// asset into saveinstance_assets/ (needs AssetManifest)
-    VerifySave         = true,  -- write saveinstance-verify.txt counting recovered scripts/unions/meshparts
-    ResumeSave         = true,  -- checkpoint the decompile cache to disk so a crash mid-save can resume
-    AntiIdle           = true,  -- disable the Idled kick so a long save doesn't get you kicked for inactivity
-}
-
-local PrepassOptions = {
-    PersistentCache = true,     -- keep the decompile cache on disk so repeat runs skip the third-party API
+local Params = {
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
+    Prepass = "prepass",
 }
+local prepass = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)()
+
+local Options = {}        -- saveinstance options — see docs/option.md
+local PrepassOptions = {} -- optional — PersistentCache and RepoURL default sensibly
 
 prepass(Options, PrepassOptions)
 ```
