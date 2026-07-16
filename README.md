@@ -33,24 +33,26 @@ local prepass = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/prepass.luau", true))()
 
 local Options = {
-    SetStreaming = false,
-    NeutralizeLighting = false,
-    ExportObj = false,
-    CapabilityReport = true,
-    AssetManifest    = true,
-    DownloadAssets   = true,
-    VerifySave       = true,
-    ResumeSave       = true,
-    AntiIdle         = true,
+    SetStreaming       = false, -- force-load the whole StreamingEnabled map first (set true for big maps)
+    NeutralizeLighting = false, -- reset Lighting to clean midday so the place opens bright, not dark/foggy
+    ExportObj          = false, -- also bake MeshPart geometry to .obj (recovers private meshes; pair with SetStreaming)
+    CapabilityReport   = true,  -- write saveinstance-capabilities.txt (executor support + likely limitations)
+    AssetManifest      = true,  -- write saveinstance-assets.txt listing every asset URI in the save
+    DownloadAssets     = true,  -- download every rbxassetid:// asset into saveinstance_assets/ (needs AssetManifest)
+    VerifySave         = true,  -- write saveinstance-verify.txt counting recovered scripts/unions/meshparts
+    ResumeSave         = true,  -- checkpoint the decompile cache to disk so a crash mid-save can resume
+    AntiIdle           = true,  -- disable the Idled kick so a long save doesn't get you kicked for inactivity
 }
 
 local PrepassOptions = {
-    PersistentCache = true,
+    PersistentCache = true,     -- keep the decompile cache on disk so repeat runs skip the third-party API
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
 }
 
 prepass(Options, PrepassOptions)
 ```
+
+> **Privacy note:** when an executor lacks a native decompiler, scripts are decompiled via the third-party **lua.expert** API — script bytecode is sent off-device. Set `noscripts = true` to skip decompiling entirely.
 
 ### How to use
 
@@ -105,6 +107,9 @@ Full options list: [`docs/option.md`](docs/option.md).
 - **Faster, lighter saves** — table buffer replaces string concatenation, fixing the O(n²) growth that causes "not enough memory" on large games
 - **Terrain, unions, & media** — SmoothGrid/PhysicsGrid, union MeshData2, decals/images/sounds all render correctly
 - **Whole-map capture** — `SetStreaming` / `FullUnionTerrainSupport` force-loads StreamingEnabled maps before saving
+- **Bright lighting on open** — `NeutralizeLighting` resets Lighting/Atmosphere/effects to clean midday so the place isn't dark/foggy in Studio
+- **Executor capability report** — `CapabilityReport` writes `saveinstance-capabilities.txt` describing executor support and likely save limitations
+- **Idle-kick protection** — `AntiIdle` disables the Idled connection so a long save doesn't kick you for inactivity (on by default)
 - **Private mesh recovery** — `ExportObj` bakes MeshPart geometry into world-space `.obj`
 - **Persistent decompile cache** — `PersistentCache` stores decompile results on disk, skipping third-party API on subsequent runs
 - **Asset manifest** — `AssetManifest` lists all asset URIs (`rbxassetid://`, `rbxasset://`, `http://`)
@@ -133,6 +138,8 @@ loadstring(game:HttpGet(
 
 | Date | Change |
 |------|--------|
+| 2026-07-16 | Fix `bit32.byteswap` polyfill mask constants (corrupted Base64/hashlib output on executors like Fluxus) |
+| 2026-07-16 | Document recommended usage options inline; add NeutralizeLighting/CapabilityReport/AntiIdle to features |
 | 2026-07-16 | Convert `.mesh` to `.obj` during DownloadAssets (Studio-importable); supports v1–v5 mesh formats |
 | 2026-07-15 | Fix DownloadAssets: follow 302 redirect to CDN, HTTP failure diagnostics |
 | 2026-07-15 | Harden DownloadAssets: fix isfolder bug, retry transient errors, deadlock protection, backslash fallback |

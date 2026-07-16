@@ -1,0 +1,9 @@
+# Normalize line endings to LF for all text files in the repo.
+# Prevents spurious whole-file CRLF/LF diffs across editors and platforms.
+* text=auto eol=lf
+
+# Explicitly treat source and docs as LF text.
+*.luau text eol=lf
+*.lua  text eol=lf
+*.md   text eol=lf
+*.toml text eol=lf
