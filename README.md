@@ -140,4 +140,35 @@ loadstring(game:HttpGet(
 |------|--------|
 | 2026-07-16 | Fix `bit32.byteswap` polyfill mask constants (corrupted Base64/hashlib output on executors like Fluxus) |
 | 2026-07-16 | Document recommended usage options inline; add NeutralizeLighting/CapabilityReport/AntiIdle to features |
-| 2026-07-16 | Convert `.mesh` to `.obj` during DownloadAssets (Studio-importable); supports v1–v5 mes
+| 2026-07-16 | Convert `.mesh` to `.obj` during DownloadAssets (Studio-importable); supports v1–v5 mesh formats |
+| 2026-07-15 | Fix DownloadAssets: follow 302 redirect to CDN, HTTP failure diagnostics |
+| 2026-07-15 | Harden DownloadAssets: fix isfolder bug, retry transient errors, deadlock protection, backslash fallback |
+| 2026-07-15 | Detect file type from magic bytes, save with correct extension (png/ogg/mesh/rbxm) |
+| 2026-07-15 | Fix Content descriptor crash on string `rbxassetid://` |
+| 2026-07-15 | Add runtime option type validation |
+| 2026-07-15 | Add `DownloadAssets` — download assets from manifest to disk |
+| 2026-07-15 | Remove orphan syntax block + fix indentation |
+| 2026-07-15 | Add `AssetManifest`, `VerifySave`, `ResumeSave`, tag/pattern filtering |
+
+## Executor Compatibility
+
+| Executor | Terrain | Union Mesh | Scripts | Notes |
+|----------|---------|------------|---------|-------|
+| Synapse / Wave | Yes | Yes | Yes | Full support |
+| Volt | Yes | Yes | Yes | Full support, has native decompiler |
+| Xeno | No | No | Yes | No `gethiddenproperty` — terrain & union mesh not saved |
+| Solara | No | No | Yes | No `gethiddenproperty` — falls back to bounding box |
+| Fluxus | Yes | Partial | Yes | `gethiddenproperty` exists but can be buggy |
+
+> Check `saveinstance-capabilities.txt` after a run to see your executor's support.
+
+## Credits
+
+- [luau](https://github.com/luao/UniversalSynSaveInstance) — Original USSI project
+- [centerepic](https://gitlab.com/centerepic/ussiprepass) — USSI Prepass script
+- [lua.expert](https://lua.expert) — Decompiler tool
+- [RealSlimShady2000](https://github.com/RealSlimShady2000/SaveInstance420Edition) — SaveInstance 420 Edition base
+
+## License
+
+This project builds upon the work of the original USSI and USSI Prepass projects.

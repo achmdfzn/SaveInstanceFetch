@@ -117,4 +117,4 @@ Try these only if a save crashes or corrupts.
 | `IgnoreDefaultPlayerScripts` | `true`  | Skip PlayerModule/RbxCharacterSounds (crash fix on some executors).              |
 | `SaveCacheInterval`          | `~57k`  | How often (bytes) to flush to file - lower = safer but slower.                   |
 
-> Full machine-generated reference (types, aliases, every field): **
+> Full machine-generated reference (types, aliases, every field): **[SynSaveInstance API →](../api/SynSaveInstance)**
