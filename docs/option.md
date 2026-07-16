@@ -23,7 +23,7 @@ synsaveinstance({
 | `noscripts`  | `false`       | Skip decompiling - save the map & structure only (scripts kept as empty instances).                    |
 | `SafeMode`   | `false`       | Kicks you from the game right before saving (anti-detection).                                          |
 | `ShowStatus` | `true`        | Show the on-screen progress bar.                                                                       |
-| `AntiIdle`   | `false`       | Disable the Idled connection so a long save doesn't get you kicked for inactivity. Recommended for large maps. |
+| `AntiIdle`   | `true`        | Disable the Idled connection so a long save doesn't get you kicked for inactivity. Recommended for large maps. Set `false` to keep the game's normal idle behavior. |
 | `ShutdownWhenDone` | `false` | Call `game:Shutdown()` (leave the game) after the save finishes successfully.                          |
 | `Anonymous`  | `false`       | Replace your UserId/Name in the saved file (pass `true`, or a table `{UserId=..., Name=...}`). **Keep off by default** - it string-replaces across the whole file, so numbers or scripts that happen to match your name/UserId can be corrupted. |
 | `Debug`            | `false`       | Write `saveinstance-debug.txt` (executor, capabilities, stats) - send it for troubleshooting.           |
@@ -117,4 +117,4 @@ Try these only if a save crashes or corrupts.
 | `IgnoreDefaultPlayerScripts` | `true`  | Skip PlayerModule/RbxCharacterSounds (crash fix on some executors).              |
 | `SaveCacheInterval`          | `~57k`  | How often (bytes) to flush to file - lower = safer but slower.                   |
 
-> Full machine-generated reference (types, aliases, every field): **[SynSaveInstance API →](../api/SynSaveInstance)**
+> Full machine-generated reference (types, aliases, every field): **
