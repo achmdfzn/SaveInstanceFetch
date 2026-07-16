@@ -1,0 +1,4 @@
+# Local scratch / helper files (PR descriptions, notes) — not part of the project
+PR_BODY.md
+*.pr.md
+*.scratch.md
