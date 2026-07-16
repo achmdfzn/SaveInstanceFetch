@@ -1,3 +1,14 @@
+-- SaveInstanceFetch prepass loader.
+-- Usage (USSI-style):
+--   local Params = {
+--       RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
+--       Prepass = "prepass",
+--   }
+--   local prepass = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)()
+--   local Options = {}        -- saveinstance options; see docs/option.md
+--   local PrepassOptions = {} -- optional; PersistentCache/RepoURL default sensibly
+--   prepass(Options, PrepassOptions)
+
 local Syn = type(syn) == "table" and syn or nil
 local Http = type(http) == "table" and http or nil
 local HttpRequest = request or http_request or (Syn and Syn.request) or (Http and Http.request)
