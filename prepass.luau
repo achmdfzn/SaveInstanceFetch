@@ -645,6 +645,24 @@ local function ReadMainScriptCache()
     return Body, Meta
 end
 
+-- Human-readable " (v1.5.0, saved 2026-07-17)" suffix from cache metadata, for logs.
+-- Returns "" when no metadata is available so callers can append it unconditionally.
+local function MetaDescription(Meta)
+    if type(Meta) ~= "table" then return "" end
+    local Parts = {}
+    if Meta.version then
+        Parts[#Parts + 1] = "v" .. tostring(Meta.version)
+    end
+    if type(Meta.savedAt) == "number" then
+        local Ok, When = pcall(os.date, "!%Y-%m-%d", Meta.savedAt)
+        if Ok and When then
+            Parts[#Parts + 1] = "saved " .. When
+        end
+    end
+    if #Parts == 0 then return "" end
+    return " (" .. table.concat(Parts, ", ") .. ")"
+end
+
 -- Persist the source plus a metadata sidecar (version, hash, timestamp) so future
 -- runs can report the cached version and auto-invalidate when the repo advances.
 local function WriteMainScriptCache(Source, Version)
@@ -723,15 +741,16 @@ local function LoadSaveInstance(PrepassOptions)
             Source = Downloaded
             WriteMainScriptCache(Source, ParseSourceVersion(Source))
         else
-            local Cached = ReadMainScriptCache()
+            local Cached, Meta = ReadMainScriptCache()
             if Cached then
                 Source, FromCache = Cached, true
                 Loader = loadstring(Source, ScriptName)
                 if Config.Verbose then
+                    local Which = MetaDescription(Meta)
                     if not HashOk then
-                        warn(("[prepass] downloaded source hash mismatch (got %s, expected %s); using cached %s"):format(tostring(Actual), tostring(RemoteHash), ScriptName))
+                        warn(("[prepass] downloaded source hash mismatch (got %s, expected %s); using cached %s%s"):format(tostring(Actual), tostring(RemoteHash), ScriptName, Which))
                     else
-                        warn("[prepass] downloaded source failed to compile; using cached " .. ScriptName)
+                        warn(("[prepass] downloaded source failed to compile; using cached %s%s"):format(ScriptName, Which))
                     end
                 end
             elseif Config.Verbose then
@@ -740,12 +759,12 @@ local function LoadSaveInstance(PrepassOptions)
         end
     else
         -- Download failed outright: fall back to the last good on-disk copy if we have one.
-        local Cached = ReadMainScriptCache()
+        local Cached, Meta = ReadMainScriptCache()
         if Cached then
             Source, FromCache = Cached, true
             Loader = loadstring(Source, ScriptName)
             if Config.Verbose then
-                warn("[prepass] download failed (" .. tostring(Downloaded) .. "); using cached " .. ScriptName)
+                warn(("[prepass] download failed (%s); using cached %s%s"):format(tostring(Downloaded), ScriptName, MetaDescription(Meta)))
             end
         end
     end
