@@ -1318,15 +1318,16 @@ do
 				local attrs_sorted = {}
 				local attrs_formatted = table.clone(attrs)
 				for attr, val in attrs do
-					attrs_n += 1
-					attrs_sorted[attrs_n] = attr
-
 					local Type = typeof(val)
 
 					local Descriptor = Binary_Descriptors[Type]
 					if not Descriptor then
 						continue -- skip unsupported attribute types instead of crashing
 					end
+
+					attrs_n += 1
+					attrs_sorted[attrs_n] = attr
+
 					local attr_size
 
 					attrs_formatted[attr], attr_size = Descriptor(val)
@@ -2431,7 +2432,15 @@ local function flush_resume_cache(CacheTable, CacheDir)
 		return
 	end
 	local dir = CacheDir or resume_cache_dir
-	if isfolder and not pcall(isfolder, dir) then
+	if isfolder then
+		-- capture BOTH pcall return values: `not pcall(isfolder, dir)` alone only reflects
+		-- whether the call THREW, so a folder that simply doesn't exist yet (returns false)
+		-- would be skipped and the later writefile would fail.
+		local isf_ok, isf_exists = pcall(isfolder, dir)
+		if not (isf_ok and isf_exists) then
+			pcall(makefolder, dir)
+		end
+	else
 		pcall(makefolder, dir)
 	end
 	local path = get_resume_cache_path(dir)
@@ -4558,9 +4567,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				if hasIgnorePatterns then
 					local skip = false
 					for _, pattern in IgnoreNamePatterns do
-						if type(pattern) == "string" and string_find(InstanceName, pattern) then
-							skip = true
-							break
+						if type(pattern) == "string" then
+							-- Lua-pattern match (per docs); pcall guards against malformed patterns
+							local ok, matched = pcall(string.find, InstanceName, pattern)
+							if ok and matched then
+								skip = true
+								break
+							end
 						end
 					end
 					if skip then

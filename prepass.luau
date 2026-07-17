@@ -302,7 +302,7 @@ local function ResolveName(o)
         return Name
     end
     local Ok2, Short = pcall(function() return o.Name end)
-    return (Ok2 and Short) or "<unknown>"
+    return (Ok2 and type(Short) == "string" and Short ~= "" and Short) or "<unknown>"
 end
 
 local function GatherUniqueScripts()
@@ -454,6 +454,14 @@ end
 local function Prepass()
     AssertPrepassCapabilities()
     local Unique = GatherUniqueScripts()
+    -- Honor MaxScripts in the manual prepass path too (built-in path maps it to
+    -- PrepassMaxScripts). Without this, MaxScripts silently did nothing here.
+    local Cap = tonumber(Config.MaxScripts)
+    if Cap and Cap > 0 then
+        for i = #Unique, Cap + 1, -1 do
+            Unique[i] = nil
+        end
+    end
     local Total = #Unique
     if Config.Verbose then
         print(("[prepass] %d unique scripts"):format(Total))
