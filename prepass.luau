@@ -51,6 +51,24 @@ local Config = {
     PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
     CacheDir = "saveinstance_decompile_cache", -- workspace folder used when PersistentCache is on
     ClearCache = false, -- wipe the on-disk cache before this run (use when cached results are stale)
+
+    -- === Update / resilience settings for the main saveinstance.luau source (v1.5.0) ===
+    CacheMainScript = true, -- keep the last good saveinstance.luau on disk and fall back to it if a download fails
+    MainScriptCacheFile = "saveinstance_source_cache.luau", -- workspace file for the fallback copy
+    MainScriptMetaFile = "saveinstance_source_cache.json",  -- sidecar metadata (version/hash/timestamp) for the cache
+    CheckForUpdates = true, -- fetch version.txt from the repo and report when a newer version is available
+    VersionFile = "version.txt", -- file at RepoURL that holds the current published version string
+    ChangelogFile = "CHANGELOG.md", -- file at RepoURL used to show "what's new" when an update is found
+    ShowChangelog = true,   -- when an update is available, print the top of the remote changelog
+    VerifyHash = true,      -- verify a downloaded source against the published hash in version.txt (if present)
+
+    -- Release channel / version pinning. Channel maps to a repo branch; Ref (if set)
+    -- overrides RepoURL's branch entirely. PinVersion refuses to run if the loaded
+    -- version doesn't match (protects against an unexpected main-branch change).
+    Channel = nil,   -- e.g. "main" or "dev"; nil = use RepoURL as-is
+    Ref = nil,       -- explicit branch/tag to load from; overrides Channel
+    PinVersion = nil, -- e.g. "1.5.0"; if set, loader aborts when the loaded version differs
+    RepoBase = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/", -- used to build RepoURL from Channel/Ref
 }
 
 local function Base64Encode(Data)
@@ -543,22 +561,227 @@ local function InstallDecompileHook()
     end
 end
 
-local function LoadSaveInstance(PrepassOptions)
-    local RepoURL = PrepassOptions.RepoURL or Config.RepoURL
-    local ScriptName = PrepassOptions.ScriptName or Config.ScriptName
+-- Extract the module version string embedded in saveinstance.luau
+-- (`local SAVEINSTANCE_VERSION = "x.y.z"`). Returns nil if not present.
+local function ParseSourceVersion(Source)
+    if type(Source) ~= "string" then return nil end
+    return string.match(Source, 'SAVEINSTANCE_VERSION%s*=%s*"([^"]+)"')
+end
+
+-- Compare two dotted version strings (e.g. "1.2.0" vs "1.10.0") numerically.
+-- Returns 1 if A > B, -1 if A < B, 0 if equal. Non-numeric segments compare as 0.
+local function CompareVersions(A, B)
+    local function Parts(V)
+        local T = {}
+        for N in string.gmatch(tostring(V), "%d+") do
+            T[#T + 1] = tonumber(N)
+        end
+        return T
+    end
+    local Pa, Pb = Parts(A), Parts(B)
+    local Len = math.max(#Pa, #Pb)
+    for i = 1, Len do
+        local Va, Vb = Pa[i] or 0, Pb[i] or 0
+        if Va ~= Vb then
+            return Va > Vb and 1 or -1
+        end
+    end
+    return 0
+end
+
+-- Resolve the effective RepoURL from RepoURL / Channel / Ref. Ref (an explicit
+-- branch or tag) wins, then Channel (a branch name), else the configured RepoURL.
+-- RepoBase + branch is only used when Ref/Channel is given, so a custom RepoURL
+-- still works untouched.
+local function ResolveRepoURL(PrepassOptions)
+    local Ref = PrepassOptions.Ref or Config.Ref
+    local Channel = PrepassOptions.Channel or Config.Channel
+    local Branch = Ref or Channel
+    local RepoURL
+    if Branch then
+        local Base = tostring(Config.RepoBase or "")
+        if Base ~= "" and string.sub(Base, -1) ~= "/" then
+            Base ..= "/"
+        end
+        RepoURL = Base .. tostring(Branch)
+    else
+        RepoURL = PrepassOptions.RepoURL or Config.RepoURL
+    end
     if string.sub(RepoURL, -1) ~= "/" then
         RepoURL ..= "/"
     end
+    return RepoURL
+end
+
+-- Path used for the on-disk copy of the last successfully loaded main script.
+local function MainScriptCachePath()
+    return tostring(Config.MainScriptCacheFile or "saveinstance_source_cache.luau")
+end
+
+local function MainScriptMetaPath()
+    return tostring(Config.MainScriptMetaFile or "saveinstance_source_cache.json")
+end
+
+-- Read the cached main-script source plus its sidecar metadata (version/hash).
+-- Returns Source, Meta (Meta may be nil even when Source is present).
+local function ReadMainScriptCache()
+    if not (Config.CacheMainScript and ReadFile and IsFile) then return nil end
+    local Path = MainScriptCachePath()
+    local OkExists, Exists = pcall(IsFile, Path)
+    if not (OkExists and Exists) then return nil end
+    local OkRead, Body = pcall(ReadFile, Path)
+    if not (OkRead and type(Body) == "string" and Body ~= "") then return nil end
+    local Meta
+    local OkMeta, MetaExists = pcall(IsFile, MainScriptMetaPath())
+    if OkMeta and MetaExists then
+        local OkMR, MetaBody = pcall(ReadFile, MainScriptMetaPath())
+        if OkMR and type(MetaBody) == "string" and MetaBody ~= "" then
+            local OkDec, Decoded = pcall(function() return HttpService:JSONDecode(MetaBody) end)
+            if OkDec and type(Decoded) == "table" then
+                Meta = Decoded
+            end
+        end
+    end
+    return Body, Meta
+end
+
+-- Persist the source plus a metadata sidecar (version, hash, timestamp) so future
+-- runs can report the cached version and auto-invalidate when the repo advances.
+local function WriteMainScriptCache(Source, Version)
+    if not (Config.CacheMainScript and WriteFile) then return end
+    if type(Source) ~= "string" or Source == "" then return end
+    pcall(WriteFile, MainScriptCachePath(), Source)
+    local Meta = {
+        version = Version,
+        hash = HashBytecode(Source),
+        savedAt = os.time and os.time() or nil,
+    }
+    local OkEnc, Encoded = pcall(function() return HttpService:JSONEncode(Meta) end)
+    if OkEnc and type(Encoded) == "string" then
+        pcall(WriteFile, MainScriptMetaPath(), Encoded)
+    end
+end
+
+-- Verify a downloaded source against the hash published in version.txt, when the
+-- publisher included one (format: "1.5.0 <hexhash>"). Absent hash = skip (return true).
+local function VerifySourceHash(Source, PublishedHash)
+    if not Config.VerifyHash then return true end
+    if type(PublishedHash) ~= "string" or PublishedHash == "" then return true end
+    local Actual = HashBytecode(Source)
+    return Actual == PublishedHash, Actual
+end
+
+-- Fetch and show the top of the remote changelog when an update is available.
+local function ShowRemoteChangelog(RepoURL)
+    if not Config.ShowChangelog then return end
+    local Url = RepoURL .. tostring(Config.ChangelogFile or "CHANGELOG.md")
+    local Ok, Body = pcall(game.HttpGet, game, Url, true)
+    if not (Ok and type(Body) == "string" and Body ~= "") then return end
+    -- Print up to the first ~12 non-empty lines so the notice stays compact.
+    local Shown = 0
+    for Line in string.gmatch(Body, "[^\r\n]+") do
+        print("[prepass]   " .. Line)
+        Shown += 1
+        if Shown >= 12 then
+            print("[prepass]   ...")
+            break
+        end
+    end
+end
+
+local function LoadSaveInstance(PrepassOptions)
+    local RepoURL = ResolveRepoURL(PrepassOptions)
+    local ScriptName = PrepassOptions.ScriptName or Config.ScriptName
     if string.sub(ScriptName, -5) == ".luau" then
         ScriptName = string.sub(ScriptName, 1, -6)
     end
     local Url = RepoURL .. ScriptName .. ".luau"
 
-    local Ok, Source = pcall(game.HttpGet, game, Url, true)
-    assert(Ok and type(Source) == "string" and Source ~= "", "[prepass] failed to download " .. Url)
+    -- Fetch the published version/hash first so we can verify the download and
+    -- decide whether the on-disk cache is stale. Best-effort; never throws.
+    local RemoteHash = nil
+    local RemoteVersionBody
+    do
+        local VersionUrl = RepoURL .. tostring(Config.VersionFile or "version.txt")
+        local OkV, Body = pcall(game.HttpGet, game, VersionUrl, true)
+        if OkV and type(Body) == "string" then
+            RemoteVersionBody = Body
+            RemoteHash = string.match(Body, "%s([%x]+)%s*$")
+        end
+    end
 
-    local Loader, LoadErr = loadstring(Source, ScriptName)
-    assert(Loader, "[prepass] failed to compile " .. ScriptName .. ": " .. tostring(LoadErr))
+    local Source, Loader
+    local FromCache = false
+    local Ok, Downloaded = pcall(game.HttpGet, game, Url, true)
+    if Ok and type(Downloaded) == "string" and Downloaded ~= "" then
+        -- A download can "succeed" (HTTP 200) yet return a GitHub 404 page or a
+        -- truncated body. Verify hash (when published) then compile: only source
+        -- that passes is trusted and cached, so a bad download can't poison the fallback.
+        local HashOk, Actual = VerifySourceHash(Downloaded, RemoteHash)
+        Loader = HashOk and loadstring(Downloaded, ScriptName) or nil
+        if HashOk and Loader then
+            Source = Downloaded
+            WriteMainScriptCache(Source, ParseSourceVersion(Source))
+        else
+            local Cached = ReadMainScriptCache()
+            if Cached then
+                Source, FromCache = Cached, true
+                Loader = loadstring(Source, ScriptName)
+                if Config.Verbose then
+                    if not HashOk then
+                        warn(("[prepass] downloaded source hash mismatch (got %s, expected %s); using cached %s"):format(tostring(Actual), tostring(RemoteHash), ScriptName))
+                    else
+                        warn("[prepass] downloaded source failed to compile; using cached " .. ScriptName)
+                    end
+                end
+            elseif Config.Verbose then
+                warn("[prepass] downloaded source rejected (" .. (HashOk and "compile error" or "hash mismatch") .. ") and no cache is available")
+            end
+        end
+    else
+        -- Download failed outright: fall back to the last good on-disk copy if we have one.
+        local Cached = ReadMainScriptCache()
+        if Cached then
+            Source, FromCache = Cached, true
+            Loader = loadstring(Source, ScriptName)
+            if Config.Verbose then
+                warn("[prepass] download failed (" .. tostring(Downloaded) .. "); using cached " .. ScriptName)
+            end
+        end
+    end
+    assert(type(Source) == "string" and Source ~= "",
+        "[prepass] failed to load " .. Url .. " and no usable cached copy is available")
+
+    local LocalVersion = ParseSourceVersion(Source)
+    if Config.Verbose and LocalVersion then
+        print(("[prepass] loaded %s v%s%s"):format(ScriptName, LocalVersion, FromCache and " (from cache)" or ""))
+    end
+
+    -- Version pinning: refuse to run a version other than the one the user pinned.
+    local Pin = PrepassOptions.PinVersion or Config.PinVersion
+    if Pin and LocalVersion and CompareVersions(LocalVersion, Pin) ~= 0 then
+        error(("[prepass] pinned to v%s but loaded v%s; aborting (set PinVersion=nil to allow)"):format(tostring(Pin), tostring(LocalVersion)))
+    end
+
+    -- Report updates using the version body we already fetched (skip when offline/cached).
+    if not FromCache and Config.CheckForUpdates and LocalVersion and RemoteVersionBody then
+        local Remote = string.match(RemoteVersionBody, "%d[%d%.]*")
+        if Remote then
+            local Cmp = CompareVersions(Remote, LocalVersion)
+            if Config.Verbose then
+                if Cmp > 0 then
+                    print(("[prepass] update available: v%s is out; you are running v%s"):format(Remote, LocalVersion))
+                    ShowRemoteChangelog(RepoURL)
+                elseif Cmp < 0 then
+                    print(("[prepass] running v%s (ahead of published v%s)"):format(LocalVersion, Remote))
+                else
+                    print(("[prepass] up to date (v%s)"):format(LocalVersion))
+                end
+            end
+        end
+    end
+
+    assert(Loader, "[prepass] failed to compile " .. ScriptName)
 
     local SaveInstance = Loader()
     assert(type(SaveInstance) == "function", "[prepass] " .. ScriptName .. " did not return a function")

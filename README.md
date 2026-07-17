@@ -39,8 +39,31 @@ Wait until you see `[saveinstance] Saved!`, then check your executor's workspace
 | Skip instances by name / tag | `IgnoreNamePatterns = {"^Camera$"}` / `IgnoreTags = {"EditorOnly"}` |
 | Save ONLY tagged instances | `SaveOnlyTags = {"SaveMe"}` |
 | Reset a stale decompile cache | `PrepassOptions.ClearCache = true` |
+| Pin to a specific version | `PrepassOptions.PinVersion = "1.5.0"` |
+| Load from the dev channel | `PrepassOptions.Channel = "dev"` |
+| Force a fresh download (skip update check) | `PrepassOptions.CheckForUpdates = false` |
 
 Full option reference: [`docs/option.md`](docs/option.md).
+
+## PrepassOptions
+
+The second argument to `prepass(Options, PrepassOptions)` controls the loader itself — downloading, caching, update checks, and version pinning. All are optional and default sensibly.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RepoURL` | `raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/` | Base URL the loader fetches `saveinstance.luau`, `version.txt`, and `CHANGELOG.md` from. |
+| `ScriptName` | `"saveinstance"` | Name of the main script to load from `RepoURL`. |
+| `Channel` | `nil` | Repo branch to load from (e.g. `"main"`, `"dev"`). Built on top of `RepoBase`. |
+| `Ref` | `nil` | Explicit branch/tag to load from; overrides `Channel`. |
+| `PinVersion` | `nil` | Refuse to run unless the loaded version matches (e.g. `"1.5.0"`). Guards against unexpected `main` changes. |
+| `PersistentCache` | `true` | Reuse decompiled scripts from disk across runs (skips repeat API calls). |
+| `CacheDir` | `"saveinstance_decompile_cache"` | Workspace folder for the decompile cache. |
+| `ClearCache` | `false` | Wipe the decompile cache before this run. |
+| `CacheMainScript` | `true` | Keep the last good `saveinstance.luau` on disk and fall back to it if a download fails or returns a bad body. |
+| `MainScriptCacheFile` | `"saveinstance_source_cache.luau"` | Workspace file for the main-script fallback copy. |
+| `CheckForUpdates` | `true` | Fetch `version.txt` and log when a newer version is published. |
+| `ShowChangelog` | `true` | When an update is found, print the top of the remote `CHANGELOG.md`. |
+| `VerifyHash` | `true` | If `version.txt` publishes a hash, verify the downloaded source matches before running it. |
 
 ## Executor compatibility
 
