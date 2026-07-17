@@ -663,8 +663,9 @@ local function MetaDescription(Meta)
     return " (" .. table.concat(Parts, ", ") .. ")"
 end
 
--- Persist the source plus a metadata sidecar (version, hash, timestamp) so future
--- runs can report the cached version and auto-invalidate when the repo advances.
+-- Persist the source plus a metadata sidecar (version, hash, timestamp). The hash
+-- lets a later run detect when its cached copy is stale relative to the published
+-- hash in version.txt; version/timestamp are surfaced in the fallback log line.
 local function WriteMainScriptCache(Source, Version)
     if not (Config.CacheMainScript and WriteFile) then return end
     if type(Source) ~= "string" or Source == "" then return end
@@ -765,6 +766,11 @@ local function LoadSaveInstance(PrepassOptions)
             Loader = loadstring(Source, ScriptName)
             if Config.Verbose then
                 warn(("[prepass] download failed (%s); using cached %s%s"):format(tostring(Downloaded), ScriptName, MetaDescription(Meta)))
+                -- If version.txt still reachable and publishes a hash, warn when the
+                -- cached copy no longer matches it (a newer release is out).
+                if RemoteHash and type(Meta) == "table" and Meta.hash and Meta.hash ~= RemoteHash then
+                    warn("[prepass] cached copy is stale (repo publishes a newer source); update when back online")
+                end
             end
         end
     end
