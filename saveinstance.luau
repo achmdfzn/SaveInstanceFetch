@@ -6,6 +6,9 @@
 -- discord.robloxscripts.com
 -- SaveInstance 420 Edition | https://github.com/achmdfzn/SaveInstanceFetch
 -- Docs: https://github.com/achmdfzn/SaveInstanceFetch
+-- Version: 1.0.0 (keep in sync with version.txt in the repo root)
+
+local SAVEINSTANCE_VERSION = "1.0.0"
 
 local realcheck = true
 local imagonnaaddmorecheck, _ = pcall(function()
@@ -5785,4 +5788,12 @@ end
 --   local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
 --   local Options = {} -- see docs/option.md
 --   synsaveinstance(Options)
+-- The module version is exposed globally so loaders (prepass.luau) and other
+-- consumers can compare it against version.txt in the repo and report when a
+-- newer release is available. A function value can't hold fields in Lua, so we
+-- publish through the shared global environment instead.
+pcall(function()
+	local env = (getgenv and getgenv()) or _G or shared
+	env.SAVEINSTANCE_VERSION = SAVEINSTANCE_VERSION
+end)
 return synsaveinstance

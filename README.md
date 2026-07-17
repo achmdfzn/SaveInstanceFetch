@@ -39,8 +39,27 @@ Wait until you see `[saveinstance] Saved!`, then check your executor's workspace
 | Skip instances by name / tag | `IgnoreNamePatterns = {"^Camera$"}` / `IgnoreTags = {"EditorOnly"}` |
 | Save ONLY tagged instances | `SaveOnlyTags = {"SaveMe"}` |
 | Reset a stale decompile cache | `PrepassOptions.ClearCache = true` |
+| Force a fresh download (ignore update check) | `PrepassOptions.CheckForUpdates = false` |
 
 Full option reference: [`docs/option.md`](docs/option.md).
+
+## PrepassOptions
+
+The second argument to `prepass(Options, PrepassOptions)` controls the loader itself (downloading, caching, and update checks). All are optional and default sensibly.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `RepoURL` | `raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/` | Base URL the loader fetches `saveinstance.luau` and `version.txt` from. |
+| `ScriptName` | `"saveinstance"` | Name of the main script to load from `RepoURL`. |
+| `PersistentCache` | `true` | Reuse decompiled scripts from disk across runs (skips repeat API calls). |
+| `CacheDir` | `"saveinstance_decompile_cache"` | Workspace folder for the decompile cache. |
+| `ClearCache` | `false` | Wipe the decompile cache before this run (use when cached results are stale). |
+| `CacheMainScript` | `true` | Keep the last good `saveinstance.luau` on disk and fall back to it if a download fails or returns a bad body. |
+| `MainScriptCacheFile` | `"saveinstance_source_cache.luau"` | Workspace file used for the main-script fallback copy. |
+| `CheckForUpdates` | `true` | Fetch `version.txt` from `RepoURL` and log when a newer version is published. |
+| `VersionFile` | `"version.txt"` | File at `RepoURL` holding the current published version string. |
+
+> **Offline resilience:** with `CacheMainScript` on, a failed or corrupt download automatically falls back to the last copy that compiled successfully, so a GitHub outage won't stop a save. The update check is skipped when running from cache.
 
 ## Executor compatibility
 

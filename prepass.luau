@@ -51,6 +51,11 @@ local Config = {
     PersistentCache = true, -- reuse decompiled scripts from disk across runs (skips repeat API calls)
     CacheDir = "saveinstance_decompile_cache", -- workspace folder used when PersistentCache is on
     ClearCache = false, -- wipe the on-disk cache before this run (use when cached results are stale)
+    -- Update / resilience settings for the main saveinstance.luau source:
+    CacheMainScript = true, -- keep the last good saveinstance.luau on disk and fall back to it if a download fails
+    MainScriptCacheFile = "saveinstance_source_cache.luau", -- workspace file used when CacheMainScript is on
+    CheckForUpdates = true, -- fetch version.txt from the repo and report when a newer version is available
+    VersionFile = "version.txt", -- file at RepoURL that holds the current published version string
 }
 
 local function Base64Encode(Data)
@@ -543,6 +548,84 @@ local function InstallDecompileHook()
     end
 end
 
+-- Extract the module version string embedded in saveinstance.luau
+-- (`local SAVEINSTANCE_VERSION = "x.y.z"`). Returns nil if not present.
+local function ParseSourceVersion(Source)
+    if type(Source) ~= "string" then return nil end
+    return string.match(Source, 'SAVEINSTANCE_VERSION%s*=%s*"([^"]+)"')
+end
+
+-- Compare two dotted version strings (e.g. "1.2.0" vs "1.10.0") numerically.
+-- Returns 1 if A > B, -1 if A < B, 0 if equal. Non-numeric segments compare as 0.
+local function CompareVersions(A, B)
+    local function Parts(V)
+        local T = {}
+        for N in string.gmatch(tostring(V), "%d+") do
+            T[#T + 1] = tonumber(N)
+        end
+        return T
+    end
+    local Pa, Pb = Parts(A), Parts(B)
+    local Len = math.max(#Pa, #Pb)
+    for i = 1, Len do
+        local Va, Vb = Pa[i] or 0, Pb[i] or 0
+        if Va ~= Vb then
+            return Va > Vb and 1 or -1
+        end
+    end
+    return 0
+end
+
+-- Path used for the on-disk copy of the last successfully loaded main script.
+local function MainScriptCachePath()
+    return tostring(Config.MainScriptCacheFile or "saveinstance_source_cache.luau")
+end
+
+local function ReadMainScriptCache()
+    if not (Config.CacheMainScript and ReadFile and IsFile) then return nil end
+    local Path = MainScriptCachePath()
+    local OkExists, Exists = pcall(IsFile, Path)
+    if not (OkExists and Exists) then return nil end
+    local OkRead, Body = pcall(ReadFile, Path)
+    if OkRead and type(Body) == "string" and Body ~= "" then
+        return Body
+    end
+    return nil
+end
+
+local function WriteMainScriptCache(Source)
+    if not (Config.CacheMainScript and WriteFile) then return end
+    if type(Source) ~= "string" or Source == "" then return end
+    pcall(WriteFile, MainScriptCachePath(), Source)
+end
+
+-- Compare the loaded module version against version.txt in the repo and report
+-- (log only) when a newer release is available. Best-effort: never throws.
+local function CheckForUpdates(RepoURL, LocalVersion)
+    if not Config.CheckForUpdates then return end
+    if not LocalVersion then return end
+    local VersionUrl = RepoURL .. tostring(Config.VersionFile or "version.txt")
+    local Ok, Body = pcall(game.HttpGet, game, VersionUrl, true)
+    if not (Ok and type(Body) == "string") then
+        if Config.Verbose then
+            print("[prepass] update check skipped: could not fetch " .. VersionUrl)
+        end
+        return
+    end
+    local Remote = string.match(Body, "%d[%d%.]*")
+    if not Remote then return end
+    local Cmp = CompareVersions(Remote, LocalVersion)
+    if Config.Verbose then
+        if Cmp > 0 then
+            print(("[prepass] update available: v%s is out; you are running v%s"):format(Remote, LocalVersion))
+        elseif Cmp < 0 then
+            print(("[prepass] running v%s (ahead of published v%s)"):format(LocalVersion, Remote))
+        else
+            print(("[prepass] up to date (v%s)"):format(LocalVersion))
+        end
+    end
+end
+
 local function LoadSaveInstance(PrepassOptions)
     local RepoURL = PrepassOptions.RepoURL or Config.RepoURL
     local ScriptName = PrepassOptions.ScriptName or Config.ScriptName
@@ -554,11 +637,56 @@ local function LoadSaveInstance(PrepassOptions)
     end
     local Url = RepoURL .. ScriptName .. ".luau"
 
-    local Ok, Source = pcall(game.HttpGet, game, Url, true)
-    assert(Ok and type(Source) == "string" and Source ~= "", "[prepass] failed to download " .. Url)
+    local Source, Loader
+    local Ok, Downloaded = pcall(game.HttpGet, game, Url, true)
+    local FromCache = false
+    if Ok and type(Downloaded) == "string" and Downloaded ~= "" then
+        -- A download can "succeed" (HTTP 200) yet return a GitHub 404 page or a
+        -- truncated body. Compile it first: only a source that actually compiles is
+        -- trusted and cached, so a garbled download can't poison the fallback copy.
+        Loader = loadstring(Downloaded, ScriptName)
+        if Loader then
+            Source = Downloaded
+            WriteMainScriptCache(Source)
+        else
+            -- Bad body served with a success status: don't cache it, and fall back
+            -- to the last good on-disk copy if we have one.
+            local Cached = ReadMainScriptCache()
+            if Cached then
+                Source, FromCache = Cached, true
+                Loader = loadstring(Source, ScriptName)
+                if Config.Verbose then
+                    warn("[prepass] downloaded source failed to compile; using cached " .. ScriptName)
+                end
+            elseif Config.Verbose then
+                print("[prepass] downloaded source failed to compile and no cache is available")
+            end
+        end
+    else
+        -- Download failed outright: fall back to the last good on-disk copy if we have one.
+        local Cached = ReadMainScriptCache()
+        if Cached then
+            Source, FromCache = Cached, true
+            Loader = loadstring(Source, ScriptName)
+            if Config.Verbose then
+                warn("[prepass] download failed (" .. tostring(Downloaded) .. "); using cached " .. ScriptName)
+            end
+        end
+    end
+    assert(type(Source) == "string" and Source ~= "",
+        "[prepass] failed to download " .. Url .. " and no usable cached copy is available")
 
-    local Loader, LoadErr = loadstring(Source, ScriptName)
-    assert(Loader, "[prepass] failed to compile " .. ScriptName .. ": " .. tostring(LoadErr))
+    local LocalVersion = ParseSourceVersion(Source)
+    if Config.Verbose and LocalVersion then
+        print(("[prepass] loaded %s v%s%s"):format(ScriptName, LocalVersion, FromCache and " (from cache)" or ""))
+    end
+    -- Skip the update check when we're offline (already using cache) — the remote
+    -- fetch would just fail too.
+    if not FromCache then
+        pcall(CheckForUpdates, RepoURL, LocalVersion)
+    end
+
+    assert(Loader, "[prepass] failed to compile " .. ScriptName)
 
     local SaveInstance = Loader()
     assert(type(SaveInstance) == "function", "[prepass] " .. ScriptName .. " did not return a function")

@@ -62,7 +62,7 @@ Big **StreamingEnabled** maps only load chunks near you. These force-load the en
 
 If your executor has no decompiler, scripts fall back to the free **lua.expert** API automatically.
 
-> The `prepass.luau` wrapper can additionally keep an on-disk decompile cache (`PersistentCache` / `CacheDir`) so repeat runs reuse previous results and re-send far less bytecode to the third-party API. See the PrepassOptions section in the README.
+> The `prepass.luau` wrapper can additionally keep an on-disk decompile cache (`PersistentCache` / `CacheDir`) so repeat runs reuse previous results and re-send far less bytecode to the third-party API. It also keeps the last good copy of `saveinstance.luau` on disk (`CacheMainScript`) and falls back to it if a download fails, and checks `version.txt` in the repo to report when a newer version is available (`CheckForUpdates`). See the PrepassOptions section in the README.
 
 | Option               | Default                    | What it does                                                                                                                                    |
 | -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
