@@ -65,6 +65,17 @@ The second argument to `prepass(Options, PrepassOptions)` controls the loader it
 | `ShowChangelog` | `true` | When an update is found, print the top of the remote `CHANGELOG.md`. |
 | `VerifyHash` | `true` | If `version.txt` publishes a hash, verify the downloaded source matches before running it. |
 
+### Prepass behavior toggles
+
+These control *how* the decompile prepass runs, separate from the loader/cache settings above.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `UseSaveInstancePrepass` | `false` | Use `saveinstance.luau`'s built-in `DecompilePrepass` instead of the loader's own hook-based prepass. Wires `PrepassConcurrency`, `PrepassRateGap`, and `PrepassApiUrl` from the loader's rate settings. |
+| `MaxScripts` | `nil` | Cap the number of scripts to decompile (maps to `Options.PrepassMaxScripts`). Only applied when `UseSaveInstancePrepass = true`. |
+| `SkipPrepass` | `false` | Skip the decompile prepass entirely — no scripts are decompiled, but saveinstance still runs (scripts stay empty). |
+| `SkipSaveInstance` | `false` | Run the prepass only and return without invoking saveinstance. Useful for warming the decompile cache. |
+
 ## Executor compatibility
 
 | Executor | Terrain | Union Mesh | Scripts |
@@ -79,8 +90,12 @@ The second argument to `prepass(Options, PrepassOptions)` controls the loader it
 ## Files
 
 - [`saveinstance.luau`](saveinstance.luau) — main serializer (terrain, unions, decompile, export)
-- [`prepass.luau`](prepass.luau) — wrapper: caches decompile to disk, hooks `decompile`, loads saveinstance
+- [`prepass.luau`](prepass.luau) — loader/wrapper: caches decompile to disk, hooks `decompile`, verifies + loads saveinstance
 - [`docs/option.md`](docs/option.md) — full option reference
+- [`version.txt`](version.txt) — current published version (checked by the loader for updates)
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed per release
+- [`ROADMAP.md`](ROADMAP.md) — planned work
+- [`moonwave.toml`](moonwave.toml) — Moonwave documentation config
 
 ## Credits
 
