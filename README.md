@@ -9,17 +9,23 @@ Fork of [UniversalSynSaveInstance](https://github.com/luao/UniversalSynSaveInsta
 Paste this into your executor:
 
 ```luau
+--!nocheck
 local Params = {
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
     Prepass = "prepass",
 }
-local prepass = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)()
+
+local Loader = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)
+assert(Loader, "[SaveInstanceFetch] failed to compile prepass loader (check your connection / RepoURL)")
+local prepass = Loader()
 
 local Options = {}        -- saveinstance options — see docs/option.md
 local PrepassOptions = {} -- optional — PersistentCache and RepoURL default sensibly
 
 prepass(Options, PrepassOptions)
 ```
+
+> The two `[Error]` lines your editor shows (`could be nil` on `loadstring`, `Unknown global 'game'`) are just the type-checker not knowing the executor environment — the script runs fine. The `--!nocheck` header silences them, and the `assert` turns a failed download into a clear message instead of a `nil` call crash.
 
 Wait until you see `[saveinstance] Saved!`, then check your executor's workspace folder:
 

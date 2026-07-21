@@ -4,7 +4,9 @@
 --       RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
 --       Prepass = "prepass",
 --   }
---   local prepass = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)()
+--   local Loader = loadstring(game:HttpGet(Params.RepoURL .. Params.Prepass .. ".luau", true), Params.Prepass)
+--   assert(Loader, "failed to compile prepass loader")
+--   local prepass = Loader()
 --   local Options = {}        -- saveinstance options; see docs/option.md
 --   local PrepassOptions = {} -- optional; PersistentCache/RepoURL default sensibly
 --   prepass(Options, PrepassOptions)
