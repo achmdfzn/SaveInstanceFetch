@@ -83,16 +83,26 @@ These control *how* the decompile prepass runs, separate from the loader/cache s
 | `SkipSaveInstance` | `false` | Run the prepass only and return without invoking saveinstance. Useful for warming the decompile cache. |
 | `MaxInFlight` | `8` | How many decompile requests run at once. Kept low so mobile / low-RAM executors don't run out of memory. Raise it (e.g. `20`) on a strong PC executor for more speed. |
 | `RequestsPerMinute` | `600` | Rate cap for decompile requests. Lower it if the API rate-limits you; raise it for speed on a fast connection. |
+| `NoProgressUI` | `false` | Disable the on-screen `Drawing` progress bar. Set `true` on executors whose `Drawing` implementation is incomplete or crash-prone (e.g. some Xeno / Solara builds). The prepass detects a broken `Drawing` automatically, but this forces it off. |
 
 ## Troubleshooting
 
-**The executor force-closes / crashes mid-save.** This is almost always the decompile prepass using too much memory by running many HTTP requests at once — most common on mobile and low-RAM executors. The defaults (`MaxInFlight = 8`, `RequestsPerMinute = 600`) are already conservative, but if it still crashes, lower them further and/or cap how many scripts are decompiled:
+**The executor force-closes / crashes mid-save.** Two common causes:
+
+*Crash during the decompile progress bar (especially Xeno / Solara).* The on-screen progress bar uses the `Drawing` API, which is incomplete on some executors. The loader now probes `Drawing` and guards every frame, but if it still crashes, turn the bar off:
+
+```luau
+local PrepassOptions = { NoProgressUI = true }
+```
+
+*Crash from memory / too many requests (mobile, low-RAM).* Lower concurrency and cap how many scripts are decompiled:
 
 ```luau
 local PrepassOptions = {
-    MaxInFlight = 3,        -- fewer simultaneous requests = less memory
+    NoProgressUI = true,   -- also skip the Drawing UI to be safe
+    MaxInFlight = 3,       -- fewer simultaneous requests = less memory
     RequestsPerMinute = 300,
-    MaxScripts = 200,       -- decompile at most 200 scripts
+    MaxScripts = 200,      -- decompile at most 200 scripts
 }
 ```
 

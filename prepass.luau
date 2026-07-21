@@ -372,8 +372,25 @@ end
 
 local NoOpUi = { Update = function() end, Destroy = function() end }
 
-local function CreateProgressUI(Total)
+local function DrawingUsable()
+    -- Some executors (e.g. Xeno/Solara) expose `Drawing` but crash when you
+    -- actually construct or mutate an object. type() alone is not enough — probe
+    -- by creating and removing one throwaway object inside pcall.
     if type(Drawing) ~= "table" and type(Drawing) ~= "userdata" then
+        return false
+    end
+    local Ok = pcall(function()
+        local Probe = Drawing.new("Square")
+        Probe.Visible = false
+        Probe:Remove()
+    end)
+    return Ok
+end
+
+local function CreateProgressUI(Total)
+    -- Opt-out escape hatch and a real capability probe. The progress bar is pure
+    -- cosmetics; if Drawing is flaky, skipping it must never take down the save.
+    if Config.NoProgressUI or not DrawingUsable() then
         return NoOpUi
     end
 
@@ -436,14 +453,22 @@ local function CreateProgressUI(Total)
         Name.Position = Vector2.new(Viewport.X / 2, BarY + BarHeight + 22)
 
         Connection = RunService.RenderStepped:Connect(function()
-            CompletedFill.Size = Vector2.new(BarWidth * (State.Done / Total), BarHeight)
-            DispatchedFill.Size = Vector2.new(BarWidth * (State.Dispatched / Total), BarHeight)
-            Progress.Text = ("%d / %d"):format(State.Done, Total)
-            local Display = State.Name
-            if #Display > 80 then
-                Display = "..." .. Display:sub(-77)
+            -- Guard every frame: if a Drawing property write throws on a flaky
+            -- executor, disconnect instead of erroring on every single frame
+            -- (which reads as a hard crash with no log).
+            local FrameOk = pcall(function()
+                CompletedFill.Size = Vector2.new(BarWidth * (State.Done / Total), BarHeight)
+                DispatchedFill.Size = Vector2.new(BarWidth * (State.Dispatched / Total), BarHeight)
+                Progress.Text = ("%d / %d"):format(State.Done, Total)
+                local Display = State.Name
+                if #Display > 80 then
+                    Display = "..." .. Display:sub(-77)
+                end
+                Name.Text = Display
+            end)
+            if not FrameOk and Connection then
+                pcall(function() Connection:Disconnect() end)
             end
-            Name.Text = Display
         end)
     end)
 
