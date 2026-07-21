@@ -43,8 +43,12 @@ local function IsCoreInstance(o)
 end
 
 local Config = {
-    RequestsPerMinute = 1350,
-    MaxInFlight = 30,
+    -- Concurrency is deliberately conservative: firing many simultaneous HTTPS
+    -- requests (each buffering bytecode + decompiled body) is the main cause of
+    -- out-of-memory "force close" crashes on mobile / low-RAM executors. Raise
+    -- MaxInFlight via PrepassOptions on a strong PC executor if you want speed.
+    RequestsPerMinute = 600,
+    MaxInFlight = 8,
     RequestTimeout = 20,
     ApiUrl  = "https://api.lua.expert/decompile",
     RepoURL = "https://raw.githubusercontent.com/achmdfzn/SaveInstanceFetch/main/",
