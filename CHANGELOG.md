@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Executor stability fixes for real-device crashes ("force close").
+
+- Progress bar hardening: the `Drawing`-based progress UI now probes the API by actually creating and removing a test object before use, and the per-frame `RenderStepped` update is wrapped so a throwing `Drawing` write disconnects instead of erroring every frame. This addresses hard crashes with no log on executors with incomplete `Drawing` (e.g. some Xeno / Solara builds).
+- New `PrepassOptions.NoProgressUI` to force the progress bar off.
+- Lower default concurrency to reduce out-of-memory force-close on low-RAM/mobile executors: `MaxInFlight` 30 → 8, `RequestsPerMinute` 1350 → 600. Both remain overridable via `PrepassOptions`.
+
 ## v1.5.0
 
 Update system and loader resilience.
