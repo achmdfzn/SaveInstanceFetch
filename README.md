@@ -81,6 +81,22 @@ These control *how* the decompile prepass runs, separate from the loader/cache s
 | `MaxScripts` | `nil` | Cap the number of scripts to decompile (maps to `Options.PrepassMaxScripts`). Only applied when `UseSaveInstancePrepass = true`. |
 | `SkipPrepass` | `false` | Skip the decompile prepass entirely — no scripts are decompiled, but saveinstance still runs (scripts stay empty). |
 | `SkipSaveInstance` | `false` | Run the prepass only and return without invoking saveinstance. Useful for warming the decompile cache. |
+| `MaxInFlight` | `8` | How many decompile requests run at once. Kept low so mobile / low-RAM executors don't run out of memory. Raise it (e.g. `20`) on a strong PC executor for more speed. |
+| `RequestsPerMinute` | `600` | Rate cap for decompile requests. Lower it if the API rate-limits you; raise it for speed on a fast connection. |
+
+## Troubleshooting
+
+**The executor force-closes / crashes mid-save.** This is almost always the decompile prepass using too much memory by running many HTTP requests at once — most common on mobile and low-RAM executors. The defaults (`MaxInFlight = 8`, `RequestsPerMinute = 600`) are already conservative, but if it still crashes, lower them further and/or cap how many scripts are decompiled:
+
+```luau
+local PrepassOptions = {
+    MaxInFlight = 3,        -- fewer simultaneous requests = less memory
+    RequestsPerMinute = 300,
+    MaxScripts = 200,       -- decompile at most 200 scripts
+}
+```
+
+To skip decompiling entirely (map/assets only — lightest possible run), set `Options.noscripts = true` or `PrepassOptions.SkipPrepass = true`.
 
 ## Executor compatibility
 
